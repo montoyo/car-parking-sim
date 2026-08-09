@@ -67,11 +67,32 @@
       .hud-lock {
         opacity: 0.85;
       }
+      /* Contact cue: centred high enough to be seen without covering the bay. */
+      #cue {
+        position: fixed;
+        top: 22%;
+        left: 0;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .contact-banner {
+        padding: 7px 14px;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.55);
+        font-size: 15px;
+        letter-spacing: 0.04em;
+        white-space: pre;
+        transition: opacity 60ms linear;
+      }
     </style>
   </head>
   <body>
     <canvas id="viewport"></canvas>
     <div id="hud"></div>
+    <div id="cue"></div>
     <div id="controls">W/S throttle &amp; brake   A/D steer   F/N/R gear   Space handbrake
 mouse look (click to capture)   Q/E look left/right   C look back   Z recentre   V top-down
 M select mirror   I/J/K/L aim it   O reset aim   Backspace restart scenario</div>

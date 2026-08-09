@@ -4,6 +4,7 @@
  * determinism tests and interpolated rendering both straightforward.
  */
 
+import type { ContactRecord } from './collision';
 import type { Gear } from './input';
 import type { Scenario, ScenarioId } from './scenario';
 import { resolveScenario } from './scenario';
@@ -100,6 +101,12 @@ export interface WorldState {
   /** Seed for any future stochastic behaviour — the core never uses Math.random. */
   readonly seed: number;
   readonly vehicle: VehicleState;
+  /**
+   * Contacts currently in progress (or lapsed within the debounce window). State,
+   * not derived: a scrape lasting hundreds of ticks is ONE event to the player,
+   * and these records are what makes the second tick of it not a second event.
+   */
+  readonly contacts: readonly ContactRecord[];
 }
 
 export interface CreateWorldOptions {
@@ -175,6 +182,7 @@ export function createWorld(scenarioId: ScenarioId, options: CreateWorldOptions 
     tick: 0,
     time: 0,
     seed: options.seed ?? 0,
+    contacts: [],
     vehicle: {
       pose,
       longitudinalVelocity: 0,

@@ -15,6 +15,7 @@
 import type { ControlInput } from './input';
 import { clamp, sanitiseInput } from './input';
 import type { SimEvent } from './events';
+import { resolveBodyCollisions } from './collision';
 import type { DynamicsState } from './dynamics';
 import { solveDynamics } from './dynamics';
 import { VEHICLE, rackRate } from './vehicle';
@@ -84,16 +85,36 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
     state = motion;
   }
 
+  // --- Collision, after the pose has moved. -------------------------------
+  // Bodywork against parked cars, walls and bollards: the car is pushed out of
+  // the overlap and takes an impulse, so it is stopped or deflected rather than
+  // driving through. The contact events go out on the same stream as everything
+  // else — live cue, scoring penalty and replay marker, one mechanism.
+  const time = world.time + dt;
+  const collision = resolveBodyCollisions({
+    pose,
+    longitudinalVelocity: motion.longitudinalVelocity,
+    lateralVelocity: motion.lateralVelocity,
+    yawRate: motion.yawRate,
+    contacts: world.contacts,
+    scenario: world.scenario,
+    tick,
+    time,
+  });
+  events.push(...collision.events);
+  pose = collision.pose;
+
   return {
     world: {
       ...world,
       tick,
-      time: world.time + dt,
+      time,
+      contacts: collision.contacts,
       vehicle: {
         pose,
-        longitudinalVelocity: motion.longitudinalVelocity,
-        lateralVelocity: motion.lateralVelocity,
-        yawRate: motion.yawRate,
+        longitudinalVelocity: collision.longitudinalVelocity,
+        lateralVelocity: collision.lateralVelocity,
+        yawRate: collision.yawRate,
         longitudinalAcceleration: motion.longitudinalAcceleration,
         lateralAcceleration: motion.lateralAcceleration,
         pitch: motion.pitch,

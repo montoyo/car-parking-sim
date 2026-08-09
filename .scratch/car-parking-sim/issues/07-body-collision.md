@@ -10,13 +10,13 @@ The `SimEvent` stream is the structural bet of this build: it feeds live cues no
 
 **Blocked by:** 03, 06
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Body polygon collision against parked cars, walls and bollards, resolved as an impulse with restitution and friction
-- [ ] `contact` events carry surface, part, severity bucket, closing speed and world position
-- [ ] Severity buckets are graze / knock / impact, derived from normal closing speed
-- [ ] Immediate audible and visual cue on contact
-- [ ] Test: driving into a parked car emits a `contact` with surface `vehicle` and stops the car
-- [ ] Test: driving into a wall emits a `contact` with surface `wall` and stops the car
-- [ ] Test: the car cannot pass through a parked car at any approach speed the scenario allows
-- [ ] Test: severity increases monotonically with closing speed
+- [x] Body polygon collision against parked cars, walls and bollards, resolved as an impulse with restitution and friction
+- [x] `contact` events carry surface, part, severity bucket, closing speed and world position
+- [x] Severity buckets are graze / knock / impact, derived from normal closing speed
+- [x] Immediate audible and visual cue on contact
+- [x] Test: driving into a parked car emits a `contact` with surface `vehicle` and stops the car
+- [x] Test: driving into a wall emits a `contact` with surface `wall` and stops the car
+- [x] Test: the car cannot pass through a parked car at any approach speed the scenario allows
+- [x] Test: severity increases monotonically with closing speed

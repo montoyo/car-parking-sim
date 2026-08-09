@@ -13,6 +13,7 @@ import { LookController } from './input/look';
 import { MirrorAimController } from './input/mirror-aim';
 import { Renderer } from './render/renderer';
 import { interpolateVehicle } from './render/interpolate';
+import { ContactCue } from './ui/contact-cue';
 import { Hud } from './ui/hud';
 
 const MAX_CATCHUP_SECONDS = 0.25;
@@ -25,12 +26,16 @@ const FRAME_BUDGET_FPS = 50;
 function main(): void {
   const canvas = document.getElementById('viewport');
   const hudRoot = document.getElementById('hud');
-  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot) {
-    throw new Error('Expected #viewport canvas and #hud element in the document.');
+  const cueRoot = document.getElementById('cue');
+  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot || !cueRoot) {
+    throw new Error('Expected #viewport canvas, #hud and #cue elements in the document.');
   }
 
   const renderer = new Renderer(canvas);
   const hud = new Hud(hudRoot);
+  // The contact cue reads the same event stream scoring and replay will: hitting
+  // something is announced in the moment, not just tallied afterwards.
+  const cue = new ContactCue(cueRoot);
   const keyboard = new KeyboardAdapter();
   keyboard.attach(window);
   // The head is a device adapter like any other: mouse look plus one-button
@@ -93,6 +98,7 @@ function main(): void {
         current = result.world;
         accumulator -= FIXED_DT;
         report(result.events);
+        cue.report(result.events);
       }
     }
 
@@ -102,6 +108,8 @@ function main(): void {
     const gaze = look.sample(paused ? 0 : elapsed);
     const mirrorAim = mirrors.sample(paused ? 0 : elapsed);
     const smoothedFps = fps.sample(elapsed);
+    // The banner fades on the display clock — it is a cue, not simulation state.
+    cue.update(paused ? 0 : elapsed);
     // Three extra passes have to be affordable on a laptop: if the display clock
     // says they are not, the mirror schedule thins them out rather than the
     // whole frame stuttering.
@@ -142,6 +150,12 @@ function report(events: readonly SimEvent[]): void {
   for (const event of events) {
     if (event.kind === 'gearChange') {
       console.info(`[sim] gear ${event.from} -> ${event.to} at tick ${event.tick}`);
+    }
+    if (event.kind === 'contact') {
+      console.info(
+        `[sim] ${event.severity} ${event.part} contact with ${event.surface} at ` +
+          `${event.closingSpeed.toFixed(2)} m/s (tick ${event.tick})`,
+      );
     }
   }
 }

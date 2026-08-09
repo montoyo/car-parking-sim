@@ -63,6 +63,20 @@ export {
   resolveScenario,
 } from './scenario';
 
+export type { ContactRecord, CollisionInput, CollisionOutcome } from './collision';
+export {
+  SEVERITY_THRESHOLDS,
+  CONTACT_DEBOUNCE_SECONDS,
+  severityFor,
+  surfaceOf,
+  bodyPolygon,
+  obstaclePolygon,
+  collidesWithBody,
+  polygonOverlap,
+  pointInConvex,
+  resolveBodyCollisions,
+} from './collision';
+
 export type { StepResult } from './step';
 export { step, FIXED_DT, wrapAngle } from './step';
 

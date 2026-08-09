@@ -47,8 +47,9 @@ export class Hud {
     // still on screen mid-manoeuvre because it is what the player is aiming at.
     const scenario = world.scenario;
     this.scenario.textContent =
-      `${scenario.name}   [${scenario.difficulty}]   to pass: ${scenario.passSummary}` +
-      '   [R restart]';
+      // The restart key is listed in the on-screen control reference; repeating it
+      // here only pushed this line off the edge of the screen.
+      `${scenario.name}   [${scenario.difficulty}]   to pass: ${scenario.passSummary}`;
 
     const kph = Math.abs(v.longitudinalVelocity) * 3.6;
     const gearLabel = v.gear === 'forward' ? 'D' : v.gear === 'reverse' ? 'R' : 'N';
