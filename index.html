@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Car Parking Simulator — debug skeleton</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #16181c;
+        color: #e6e6e6;
+        font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow: hidden;
+      }
+      #viewport {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      #hud,
+      #controls {
+        position: fixed;
+        left: 12px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.45);
+        border-radius: 4px;
+        white-space: pre;
+      }
+      #hud {
+        top: 12px;
+      }
+      #controls {
+        bottom: 12px;
+        opacity: 0.75;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="viewport"></canvas>
+    <div id="hud"></div>
+    <div id="controls">W/S throttle &amp; brake   A/D steer   F/N/R gear   Space handbrake</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

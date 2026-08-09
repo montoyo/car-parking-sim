@@ -12,16 +12,16 @@ This ticket establishes the test vocabulary the entire suite will use: a helper 
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] TypeScript + WebGL project runs in a browser and renders a flat-shaded box on a ground plane
-- [ ] Simulation core has no imports from the renderer, DOM, or any timer
-- [ ] `createWorld` and `step` exist with the `ControlInput` and `SimEvent` shapes described above
-- [ ] Fixed-timestep accumulator drives the core; rendering interpolates between states
-- [ ] Vehicle definition exists in one place and is read by both core and renderer
-- [ ] Keyboard adapter produces `ControlInput`, including wind-on and self-centre ramping for steering
-- [ ] Debug top-down camera follows the car
-- [ ] Scripted-input test helper exists and is used by every test in this ticket
-- [ ] Test: identical input scripts from an identical initial world produce bit-identical final worlds
-- [ ] Test: halving `dt` while doubling tick count leaves the final pose within a stated tolerance
-- [ ] Test: selecting reverse and applying throttle moves the car backwards
+- [x] TypeScript + WebGL project runs in a browser and renders a flat-shaded box on a ground plane
+- [x] Simulation core has no imports from the renderer, DOM, or any timer
+- [x] `createWorld` and `step` exist with the `ControlInput` and `SimEvent` shapes described above
+- [x] Fixed-timestep accumulator drives the core; rendering interpolates between states
+- [x] Vehicle definition exists in one place and is read by both core and renderer
+- [x] Keyboard adapter produces `ControlInput`, including wind-on and self-centre ramping for steering
+- [x] Debug top-down camera follows the car
+- [x] Scripted-input test helper exists and is used by every test in this ticket
+- [x] Test: identical input scripts from an identical initial world produce bit-identical final worlds
+- [x] Test: halving `dt` while doubling tick count leaves the final pose within a stated tolerance
+- [x] Test: selecting reverse and applying throttle moves the car backwards
