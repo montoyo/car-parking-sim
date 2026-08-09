@@ -6,7 +6,7 @@
 
 import type { Gear } from './input';
 import type { WheelId, Vec2 } from './vehicle';
-import { WHEEL_IDS, VEHICLE, wheelPosition } from './vehicle';
+import { WHEEL_IDS, VEHICLE, ackermannSteerAngles, wheelPosition } from './vehicle';
 
 /** Planar pose of the vehicle origin (midway along the wheelbase). */
 export interface BodyPose {
@@ -70,24 +70,29 @@ const SPAWN: Readonly<Record<ScenarioId, BodyPose>> = {
   'debug-plane': { x: 0, y: 0, yaw: 0 },
 };
 
-/** Place the wheels in world space for a given pose and rack position. */
+/**
+ * Place the wheels in world space for a given pose and rack position. Front
+ * steer angles come from Ackermann geometry — the two front wheels do NOT share
+ * an angle — and the rears are always straight.
+ */
 export function wheelStatesFor(
   pose: BodyPose,
-  steerAngle: number,
+  rack: number,
   spin: Readonly<Record<WheelId, number>>,
 ): Readonly<Record<WheelId, WheelState>> {
   const cos = Math.cos(pose.yaw);
   const sin = Math.sin(pose.yaw);
+  const steer = ackermannSteerAngles(rack, VEHICLE);
   const out = {} as Record<WheelId, WheelState>;
   for (const id of WHEEL_IDS) {
     const local = wheelPosition(id, VEHICLE);
-    const isFront = id === 'frontLeft' || id === 'frontRight';
     out[id] = {
       position: {
         x: pose.x + local.x * cos - local.y * sin,
         y: pose.y + local.x * sin + local.y * cos,
       },
-      steerAngle: isFront ? steerAngle : 0,
+      steerAngle:
+        id === 'frontLeft' ? steer.frontLeft : id === 'frontRight' ? steer.frontRight : 0,
       spin: spin[id],
     };
   }

@@ -82,6 +82,18 @@ export interface VehicleDefinition {
   readonly maxSteerAngle: number;
   /** Seconds for the rack to travel lock-to-lock while rolling. */
   readonly rackLockToLockSeconds: number;
+  /**
+   * Seconds for the rack to travel lock-to-lock at a standstill. Dry-steering
+   * scrubs the tyres against the road, so the wheel is heavier: this is longer
+   * than `rackLockToLockSeconds`.
+   */
+  readonly rackLockToLockSecondsStationary: number;
+  /**
+   * Speed (m/s) at or above which the rack moves at its full rolling rate.
+   * Between 0 and this the rate blends linearly, so there is no step in
+   * steering feel as the car starts to roll.
+   */
+  readonly rackRollingSpeed: number;
 
   /** Driver's eye point in vehicle local coordinates (left-hand drive: +y). */
   readonly driverEyePoint: Vec3;
@@ -118,6 +130,8 @@ export const VEHICLE: VehicleDefinition = {
 
   maxSteerAngle: 0.58,
   rackLockToLockSeconds: 2.4,
+  rackLockToLockSecondsStationary: 4.6,
+  rackRollingSpeed: 0.6,
 
   driverEyePoint: { x: 0.35, y: 0.37, z: 1.18 },
 
@@ -174,6 +188,69 @@ export function bodyOutline(v: VehicleDefinition = VEHICLE): readonly Vec2[] {
     { x: xr, y: -hw },
     { x: xf, y: -hw },
   ];
+}
+
+/**
+ * Reference (virtual bicycle) road-wheel angle for a rack position, radians.
+ * Positive = steering LEFT, matching `ControlInput.steer` and the +y-is-left
+ * frame. This is the angle of the single front wheel of the equivalent bicycle,
+ * sitting at the centre of the front axle.
+ */
+export function referenceSteerAngle(rack: number, v: VehicleDefinition = VEHICLE): number {
+  const r = rack < -1 ? -1 : rack > 1 ? 1 : rack;
+  return r * v.maxSteerAngle;
+}
+
+/**
+ * Turn radius of the rear-axle centre about the instantaneous centre for a rack
+ * position, metres. `Infinity` when the rack is centred (straight ahead).
+ */
+export function turnRadius(rack: number, v: VehicleDefinition = VEHICLE): number {
+  const delta = referenceSteerAngle(rack, v);
+  if (delta === 0) return Infinity;
+  return v.wheelbase / Math.tan(Math.abs(delta));
+}
+
+/**
+ * Ackermann front road-wheel angles for a rack position (radians, positive =
+ * left). The inner wheel takes MORE lock than the outer because it runs on a
+ * tighter circle about the same instantaneous centre — that is the whole point
+ * of Ackermann geometry, and it comes straight out of the wheelbase and front
+ * track in this definition. Nothing else in the project computes these.
+ */
+export function ackermannSteerAngles(
+  rack: number,
+  v: VehicleDefinition = VEHICLE,
+): { readonly frontLeft: number; readonly frontRight: number } {
+  const delta = referenceSteerAngle(rack, v);
+  if (delta === 0) return { frontLeft: 0, frontRight: 0 };
+
+  const radius = turnRadius(rack, v);
+  const halfTrack = v.trackFront / 2;
+  const sign = delta > 0 ? 1 : -1;
+
+  // Distance from the instantaneous centre to each front wheel, along the axle.
+  const innerArm = radius - halfTrack;
+  const outerArm = radius + halfTrack;
+  const inner = innerArm <= 0 ? Math.PI / 2 : Math.atan(v.wheelbase / innerArm);
+  const outer = Math.atan(v.wheelbase / outerArm);
+
+  // Turning left, the left wheel is the inner one.
+  return sign > 0
+    ? { frontLeft: inner, frontRight: outer }
+    : { frontLeft: -outer, frontRight: -inner };
+}
+
+/**
+ * How fast the rack can travel (rack units per second) at a given body speed.
+ * Slower at a standstill than rolling; blends linearly so there is no step.
+ */
+export function rackRate(speed: number, v: VehicleDefinition = VEHICLE): number {
+  const stationary = 2 / v.rackLockToLockSecondsStationary;
+  const rolling = 2 / v.rackLockToLockSeconds;
+  const raw = Math.abs(speed) / v.rackRollingSpeed;
+  const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+  return stationary + (rolling - stationary) * t;
 }
 
 /** Wheel hub centre in vehicle local ground-plane coordinates. */

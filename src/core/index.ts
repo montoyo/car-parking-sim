@@ -49,4 +49,8 @@ export {
   wheelPosition,
   frontAxleX,
   rearAxleX,
+  ackermannSteerAngles,
+  referenceSteerAngle,
+  turnRadius,
+  rackRate,
 } from './vehicle';

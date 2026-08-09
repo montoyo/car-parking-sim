@@ -12,7 +12,7 @@
  *   expect(r.world.vehicle.pose.x).toBeLessThan(-0.5);
  */
 
-import type { ControlInput, SimEvent, WorldState } from '../../src/core/index';
+import type { ControlInput, SimEvent, Vec2, WheelId, WorldState } from '../../src/core/index';
 import { FIXED_DT, NEUTRAL_INPUT, step } from '../../src/core/index';
 
 /** A held input, applied for a duration. Unspecified channels are neutral. */
@@ -90,4 +90,94 @@ export function poseDistance(
 
 export function degrees(radians: number): number {
   return (radians * 180) / Math.PI;
+}
+
+/** The world-space path traced by one wheel hub over a driven history. */
+export function wheelPath(history: readonly WorldState[], id: WheelId): readonly Vec2[] {
+  return history.map((w) => w.vehicle.wheels[id].position);
+}
+
+export interface FittedCircle {
+  readonly centre: Vec2;
+  readonly radius: number;
+}
+
+/**
+ * Least-squares circle through a traced path (Kåsa's algebraic fit). Used to
+ * measure a turning circle from the outside — from poses only, never from the
+ * integrator's internals.
+ */
+export function fitCircle(points: readonly Vec2[]): FittedCircle {
+  if (points.length < 3) throw new Error('fitCircle needs at least 3 points');
+  // Fit x^2 + y^2 = a*x + b*y + c, then centre = (a/2, b/2).
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  let sz = 0;
+  let sxz = 0;
+  let syz = 0;
+  const n = points.length;
+  for (const p of points) {
+    const z = p.x * p.x + p.y * p.y;
+    sx += p.x;
+    sy += p.y;
+    sxx += p.x * p.x;
+    syy += p.y * p.y;
+    sxy += p.x * p.y;
+    sz += z;
+    sxz += p.x * z;
+    syz += p.y * z;
+  }
+  // Solve the 3x3 normal equations by Cramer's rule.
+  //   [sxx sxy sx][a]   [sxz]
+  //   [sxy syy sy][b] = [syz]
+  //   [sx  sy  n ][c]   [sz ]
+  const det = det3(sxx, sxy, sx, sxy, syy, sy, sx, sy, n);
+  if (Math.abs(det) < 1e-12) {
+    throw new Error('fitCircle: degenerate path (collinear or stationary points?)');
+  }
+  const a = det3(sxz, sxy, sx, syz, syy, sy, sz, sy, n) / det;
+  const b = det3(sxx, sxz, sx, sxy, syz, sy, sx, sz, n) / det;
+  const c = det3(sxx, sxy, sxz, sxy, syy, syz, sx, sy, sz) / det;
+
+  const centre = { x: a / 2, y: b / 2 };
+  const radius = Math.sqrt(Math.max(0, c + centre.x * centre.x + centre.y * centre.y));
+  return { centre, radius };
+}
+
+function det3(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  e: number,
+  f: number,
+  g: number,
+  h: number,
+  i: number,
+): number {
+  return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+}
+
+/**
+ * Seconds from the start of a driven segment until the rack first reaches
+ * `target` (signed rack position, e.g. 1 for full left lock). `null` if it never
+ * got there within the history.
+ */
+export function rackTravelSeconds(
+  history: readonly WorldState[],
+  target: number,
+  tolerance = 1e-6,
+): number | null {
+  const first = history[0];
+  const second = history[1];
+  if (first === undefined || second === undefined) return null;
+  const dt = second.time - first.time;
+  const segmentStart = first.time - dt;
+  for (const w of history) {
+    if (Math.abs(w.vehicle.rack - target) <= tolerance) return w.time - segmentStart;
+  }
+  return null;
 }

@@ -8,13 +8,13 @@ Rack position is explicit state in `WorldState` (the HUD and the replay both rea
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Front wheel angles follow Ackermann geometry — inner and outer differ, derived from the vehicle definition
-- [ ] Rack moves toward the input target at a bounded rate, slower at zero speed than rolling
-- [ ] Rack position cannot exceed the vehicle's lock
-- [ ] Rack position is part of `WorldState` and displayed on a HUD indicator
-- [ ] Test: at full lock, the turning circle matches the Ackermann prediction for the vehicle's wheelbase and track, within a stated tolerance
-- [ ] Test: through a turn, the rear wheels' traced path lies inside the front wheels'
-- [ ] Test: the rack takes the specified time to travel lock-to-lock, and takes longer from a standstill
-- [ ] Test: a steering input beyond lock leaves the rack at lock
+- [x] Front wheel angles follow Ackermann geometry — inner and outer differ, derived from the vehicle definition
+- [x] Rack moves toward the input target at a bounded rate, slower at zero speed than rolling
+- [x] Rack position cannot exceed the vehicle's lock
+- [x] Rack position is part of `WorldState` and displayed on a HUD indicator
+- [x] Test: at full lock, the turning circle matches the Ackermann prediction for the vehicle's wheelbase and track, within a stated tolerance
+- [x] Test: through a turn, the rear wheels' traced path lies inside the front wheels'
+- [x] Test: the rack takes the specified time to travel lock-to-lock, and takes longer from a standstill
+- [x] Test: a steering input beyond lock leaves the rack at lock

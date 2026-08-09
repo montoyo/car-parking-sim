@@ -17,7 +17,7 @@ import type { ControlInput } from './input';
 import { clamp, sanitiseInput } from './input';
 import type { SimEvent } from './events';
 import type { WheelId } from './vehicle';
-import { VEHICLE, WHEEL_IDS } from './vehicle';
+import { VEHICLE, WHEEL_IDS, rackRate, referenceSteerAngle } from './vehicle';
 import type { WorldState } from './world';
 import { wheelStatesFor } from './world';
 
@@ -48,11 +48,13 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
   const gear = input.gear;
 
   // --- Steering rack: bounded rate toward the target, hard finite lock. ---
-  const rackRate = 2 / VEHICLE.rackLockToLockSeconds;
+  // The rate is speed-dependent (dry-steering is slower), so the player has to
+  // wind the wheel rather than teleport to lock — most of all when parked.
+  const rate = rackRate(v.longitudinalVelocity, VEHICLE);
   const rackError = input.steer - v.rack;
-  const rackStep = clamp(rackError, -rackRate * dt, rackRate * dt);
+  const rackStep = clamp(rackError, -rate * dt, rate * dt);
   const rack = clamp(v.rack + rackStep, -1, 1);
-  const steerAngle = rack * VEHICLE.maxSteerAngle;
+  const steerAngle = referenceSteerAngle(rack, VEHICLE);
 
   // --- Longitudinal: signed speed along the body's forward axis. ---
   const direction = gear === 'forward' ? 1 : gear === 'reverse' ? -1 : 0;
@@ -72,13 +74,21 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
   }
   speed = clamp(speed, -MAX_SPEED, MAX_SPEED);
 
-  // --- Kinematic bicycle about the rear axle. ---
+  // --- Kinematic bicycle PIVOTING ABOUT THE REAR AXLE. ---
+  // The rear axle centre is what travels along the heading; the body origin sits
+  // half a wheelbase ahead of it and therefore swings, which is exactly why the
+  // rear wheels cut inside the fronts through a turn. Integrate the rear axle
+  // and place the origin from it.
+  const halfBase = VEHICLE.wheelbase / 2;
   const yawRate = (speed / VEHICLE.wheelbase) * Math.tan(steerAngle);
   const yaw = wrapAngle(v.pose.yaw + yawRate * dt);
   const heading = wrapAngle(v.pose.yaw + 0.5 * yawRate * dt);
+
+  const rearX = v.pose.x - halfBase * Math.cos(v.pose.yaw) + speed * Math.cos(heading) * dt;
+  const rearY = v.pose.y - halfBase * Math.sin(v.pose.yaw) + speed * Math.sin(heading) * dt;
   const pose = {
-    x: v.pose.x + speed * Math.cos(heading) * dt,
-    y: v.pose.y + speed * Math.sin(heading) * dt,
+    x: rearX + halfBase * Math.cos(yaw),
+    y: rearY + halfBase * Math.sin(yaw),
     yaw,
   };
 
@@ -96,11 +106,13 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
       vehicle: {
         pose,
         longitudinalVelocity: speed,
-        lateralVelocity: 0,
+        // The origin is ahead of the pivot, so it has a lateral component even
+        // in this kinematic model. Ticket 03 replaces this with real slip.
+        lateralVelocity: yawRate * halfBase,
         yawRate,
         rack,
         gear,
-        wheels: wheelStatesFor(pose, steerAngle, spin),
+        wheels: wheelStatesFor(pose, rack, spin),
       },
     },
     events,
