@@ -15,6 +15,18 @@ import type { CockpitPiece } from './cockpit';
 import { cockpitShell } from './cockpit';
 import type { LookState } from './camera';
 import { FIRST_PERSON_FOV, LOOK_AHEAD, bodyTransform, firstPersonViewMatrix } from './camera';
+import type { MirrorAimSet, MirrorId } from './mirror';
+import {
+  MIRROR_IDS,
+  NEUTRAL_MIRROR_AIM,
+  convexWarp,
+  manoeuvreSide,
+  mirrorDefinition,
+  mirrorFrameWorld,
+  mirrorTargetSize,
+  mirrorViewProjection,
+  mirrorsToUpdate,
+} from './mirror';
 
 const BOX_VS = `#version 300 es
 in vec3 aPosition;
@@ -61,6 +73,50 @@ void main() {
   outColour = vec4(mix(base, mark, line), 1.0);
 }`;
 
+/**
+ * The mirror glass: a quad in the world, texture-mapped with its own render
+ * target by projecting each glass point through the mirror's own view-projection.
+ * Projective texturing means the image lines up with the frustum that produced it
+ * without a single hand-placed UV, and because the quad is real geometry the
+ * cockpit shell occludes it exactly as the door frame occludes a real mirror.
+ */
+const GLASS_VS = `#version 300 es
+in vec3 aPosition;
+uniform mat4 uViewProjection;
+uniform mat4 uModel;
+uniform mat4 uMirrorViewProjection;
+out vec4 vMirrorClip;
+void main() {
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vMirrorClip = uMirrorViewProjection * world;
+  gl_Position = uViewProjection * world;
+}`;
+
+/**
+ * `uWarp` is the convex mirror's radial warp: the sampled radius is compressed
+ * toward the centre, so the middle of the glass keeps roughly the scale a flat
+ * mirror would give and the extra field the widened frustum captured is squeezed
+ * into the edges. Zero for the flat interior mirror, which then samples 1:1.
+ */
+const GLASS_FS = `#version 300 es
+precision highp float;
+in vec4 vMirrorClip;
+uniform sampler2D uMirror;
+uniform float uWarp;
+out vec4 outColour;
+void main() {
+  vec2 ndc = vMirrorClip.xy / vMirrorClip.w;
+  float r = length(ndc);
+  vec2 warped = ndc * ((1.0 - uWarp) + uWarp * r * r);
+  vec2 uv = warped * 0.5 + 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    // Outside the glass' own frustum there is nothing to reflect: dark glass.
+    outColour = vec4(0.03, 0.03, 0.04, 1.0);
+    return;
+  }
+  outColour = vec4(texture(uMirror, uv).rgb, 1.0);
+}`;
+
 interface BoxProgram {
   readonly program: WebGLProgram;
   readonly vao: WebGLVertexArrayObject;
@@ -74,6 +130,34 @@ interface GroundProgram {
   readonly program: WebGLProgram;
   readonly vao: WebGLVertexArrayObject;
   readonly uViewProjection: WebGLUniformLocation;
+}
+
+interface GlassProgram {
+  readonly program: WebGLProgram;
+  readonly vao: WebGLVertexArrayObject;
+  readonly uViewProjection: WebGLUniformLocation;
+  readonly uModel: WebGLUniformLocation;
+  readonly uMirrorViewProjection: WebGLUniformLocation;
+  readonly uWarp: WebGLUniformLocation;
+}
+
+/** A mirror's off-screen render target. Deliberately tiny — see `mirror.ts`. */
+interface MirrorTarget {
+  readonly framebuffer: WebGLFramebuffer;
+  readonly texture: WebGLTexture;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Presentation-only per-frame inputs the renderer needs beyond the world state. */
+export interface RenderOptions {
+  /** Where the player has aimed each mirror. */
+  readonly mirrorAim?: MirrorAimSet;
+  /**
+   * Set when the frame rate has dropped below the display's budget. Mirror
+   * passes then update less often, the far wing mirror first.
+   */
+  readonly overBudget?: boolean;
 }
 
 /**
@@ -94,8 +178,12 @@ export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly box: BoxProgram;
   private readonly ground: GroundProgram;
+  private readonly glass: GlassProgram;
+  private readonly mirrors: Readonly<Record<MirrorId, MirrorTarget>>;
   private readonly cockpit: readonly CockpitPiece[] = cockpitShell(VEHICLE);
   private viewMode: ViewMode = 'first-person';
+  /** Frames drawn, which is what the mirror update schedule is keyed on. */
+  private frameIndex = 0;
   /** Metres visible vertically in the debug top-down camera. */
   private viewHeightMetres = 22;
 
@@ -107,6 +195,12 @@ export class Renderer {
     gl.enable(gl.CULL_FACE);
     this.box = this.createBoxProgram();
     this.ground = this.createGroundProgram();
+    this.glass = this.createGlassProgram();
+    this.mirrors = {
+      interior: this.createMirrorTarget('interior'),
+      wingLeft: this.createMirrorTarget('wingLeft'),
+      wingRight: this.createMirrorTarget('wingRight'),
+    };
   }
 
   setViewMode(mode: ViewMode): void {
@@ -134,17 +228,44 @@ export class Renderer {
    * the driver is looking. One pass, flat shading, no textures: the frame budget
    * goes on holding the refresh rate, which is what low-speed control needs.
    */
-  render(vehicle: VehicleState, look: LookState = LOOK_AHEAD): void {
+  render(vehicle: VehicleState, look: LookState = LOOK_AHEAD, options: RenderOptions = {}): void {
     const gl = this.gl;
+    const aim = options.mirrorAim ?? NEUTRAL_MIRROR_AIM;
+    const firstPerson = this.viewMode === 'first-person';
+
+    // Mirror passes first: they render into their own targets, which the main
+    // pass then samples when it draws the glass.
+    if (firstPerson) this.renderMirrors(vehicle, aim, options.overBudget === true);
+    this.frameIndex++;
+
     this.resize();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.clearColor(0.09, 0.1, 0.12, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const firstPerson = this.viewMode === 'first-person';
     const viewProjection = firstPerson
       ? this.firstPersonViewProjection(vehicle, look)
       : this.debugTopDownViewProjection(vehicle);
 
+    this.drawScene(vehicle, viewProjection, { noseMarker: !firstPerson });
+    if (firstPerson) {
+      this.drawCockpit(vehicle);
+      this.drawGlass(vehicle, aim, viewProjection);
+    }
+  }
+
+  /**
+   * The car and the world it sits in, from any camera. Shared by the first-person
+   * pass, the debug top-down pass and every mirror pass — a mirror shows the same
+   * scene, including the car's own flank and mirror housings, because a driver
+   * sees their own bodywork in the wing mirror and uses it as a reference edge.
+   */
+  private drawScene(
+    vehicle: VehicleState,
+    viewProjection: Mat4,
+    options: { readonly noseMarker: boolean; readonly skipHousing?: MirrorId },
+  ): void {
+    const gl = this.gl;
     gl.useProgram(this.ground.program);
     gl.uniformMatrix4fv(this.ground.uViewProjection, false, viewProjection);
     gl.bindVertexArray(this.ground.vao);
@@ -170,9 +291,9 @@ export class Renderer {
 
     // A nose marker so heading is unambiguous in the debug view — it would sit
     // in the driver's eyeline, so it is drawn only from above.
-    if (!firstPerson) {
+    if (options.noseMarker) {
       this.drawBox(
-      this.bodyMatrix(vehicle),
+        this.bodyMatrix(vehicle),
         { x: Math.max(...xs) - 0.12, y: 0, z: bodyTop + 0.02 },
         { hx: 0.12, hy: 0.28, hz: 0.03 },
         [0.95, 0.9, 0.55],
@@ -183,7 +304,97 @@ export class Renderer {
       this.drawWheel(id, vehicle);
     }
 
-    if (firstPerson) this.drawCockpit(vehicle);
+    this.drawMirrorHousings(vehicle, options.skipHousing);
+  }
+
+  /**
+   * One render pass per mirror that is due this frame, into its own small target.
+   *
+   * The reflection reverses triangle winding, so these passes cull FRONT faces
+   * rather than back ones. That has a second, useful consequence: the interior
+   * mirror's reflected eye sits inside the body box (as a real interior mirror
+   * does), and from in there every face of the box is culled — so the mirror looks
+   * out through the greenhouse instead of at the inside of the bodywork, while the
+   * wing mirrors, whose reflected eyes are outboard of the flank, still see it.
+   */
+  private renderMirrors(vehicle: VehicleState, aim: MirrorAimSet, overBudget: boolean): void {
+    const gl = this.gl;
+    const due = mirrorsToUpdate(this.frameIndex, manoeuvreSide(vehicle), overBudget);
+    if (due.length === 0) return;
+
+    gl.cullFace(gl.FRONT);
+    for (const id of due) {
+      const target = this.mirrors[id];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+      gl.viewport(0, 0, target.width, target.height);
+      gl.clearColor(0.09, 0.1, 0.12, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      this.drawScene(vehicle, mirrorViewProjection(vehicle, id, aim[id]), {
+        noseMarker: false,
+        skipHousing: id,
+      });
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.cullFace(gl.BACK);
+  }
+
+  /**
+   * The reflective faces, drawn as real quads where the glass is, sampling the
+   * targets the mirror passes just filled. Being real geometry, they are occluded
+   * by the door frame and the A-pillar and shrink as the driver looks away.
+   */
+  private drawGlass(vehicle: VehicleState, aim: MirrorAimSet, viewProjection: Mat4): void {
+    const gl = this.gl;
+    gl.useProgram(this.glass.program);
+    gl.bindVertexArray(this.glass.vao);
+    gl.uniformMatrix4fv(this.glass.uViewProjection, false, viewProjection);
+    // The glass is a single flat face; culling it would depend on which way the
+    // mirror's frame happens to wind.
+    gl.disable(gl.CULL_FACE);
+    for (const id of MIRROR_IDS) {
+      const definition = mirrorDefinition(id, VEHICLE);
+      const model = multiply(
+        mirrorFrameWorld(vehicle, id, aim[id], VEHICLE),
+        scaling(definition.width / 2, definition.height / 2, 1),
+      );
+      gl.uniformMatrix4fv(this.glass.uModel, false, model);
+      gl.uniformMatrix4fv(
+        this.glass.uMirrorViewProjection,
+        false,
+        mirrorViewProjection(vehicle, id, aim[id], VEHICLE),
+      );
+      gl.uniform1f(this.glass.uWarp, convexWarp(vehicle, id, aim[id], VEHICLE));
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.mirrors[id].texture);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+    gl.enable(gl.CULL_FACE);
+  }
+
+  /**
+   * The mirror bodies: a casing behind each glass so the mirrors are objects on
+   * the car rather than floating rectangles, and so the wing mirrors read as
+   * mounted out on the doors where the flank reference comes from.
+   */
+  private drawMirrorHousings(vehicle: VehicleState, skip?: MirrorId): void {
+    for (const id of MIRROR_IDS) {
+      // A mirror never sees its own casing: the casing is directly behind the
+      // glass, i.e. right on top of the reflected eye, and would fill the view.
+      if (id === skip) continue;
+      const definition = mirrorDefinition(id, VEHICLE);
+      // Housings ignore aim: the casing is bolted to the car, only the glass moves.
+      const frame = mirrorFrameWorld(vehicle, id, undefined, VEHICLE);
+      this.drawBox(
+        frame,
+        { x: 0, y: 0, z: -0.035 },
+        {
+          hx: (definition.width / 2) * 1.18,
+          hy: (definition.height / 2) * 1.35,
+          hz: 0.03,
+        },
+        [0.13, 0.13, 0.14],
+      );
+    }
   }
 
   /**
@@ -297,6 +508,71 @@ export class Renderer {
     gl.bindVertexArray(null);
     return { program, vao, uViewProjection: uniform(gl, program, 'uViewProjection') };
   }
+
+  private createGlassProgram(): GlassProgram {
+    const gl = this.gl;
+    const program = compileProgram(gl, GLASS_VS, GLASS_FS);
+    // prettier-ignore
+    const quad = new Float32Array([
+      -1, -1, 0,   1, -1, 0,   1, 1, 0,
+      -1, -1, 0,   1,  1, 0,  -1, 1, 0,
+    ]);
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    bindAttribute(gl, program, 'aPosition', quad, 3);
+    gl.bindVertexArray(null);
+    gl.useProgram(program);
+    gl.uniform1i(uniform(gl, program, 'uMirror'), 0);
+    return {
+      program,
+      vao,
+      uViewProjection: uniform(gl, program, 'uViewProjection'),
+      uModel: uniform(gl, program, 'uModel'),
+      uMirrorViewProjection: uniform(gl, program, 'uMirrorViewProjection'),
+      uWarp: uniform(gl, program, 'uWarp'),
+    };
+  }
+
+  /**
+   * A mirror's render target: a small colour texture plus a depth buffer. Linear
+   * filtering is what makes a 72-pixel-high mirror read as a coarse reflection
+   * rather than as a mosaic.
+   */
+  private createMirrorTarget(id: MirrorId): MirrorTarget {
+    const gl = this.gl;
+    const { width, height } = mirrorTargetSize(id, VEHICLE);
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const depth = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error(`Mirror render target for ${id} is incomplete.`);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { framebuffer, texture, width, height };
+  }
+}
+
+/** Non-uniform scale, used to stretch the unit glass quad onto a mirror. */
+function scaling(x: number, y: number, z: number): Mat4 {
+  const m = new Float32Array(16) as Mat4;
+  m[0] = x;
+  m[5] = y;
+  m[10] = z;
+  m[15] = 1;
+  return m;
 }
 
 /** Unit cube spanning [-1, 1] on each axis, flat-shaded via per-face normals. */

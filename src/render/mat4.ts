@@ -71,6 +71,31 @@ export function perspective(fovY: number, aspect: number, near: number, far: num
   return m;
 }
 
+/**
+ * General (possibly off-axis) perspective frustum, with the sides given at the
+ * near plane. The mirrors need this rather than `perspective`: their frustum is
+ * the skewed cone the glass subtends from the reflected eye, and centring it
+ * would be exactly the hand-wave that destroys the blind spots.
+ */
+export function frustum(
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  near: number,
+  far: number,
+): Mat4 {
+  const m = new Float32Array(16) as Mat4;
+  m[0] = (2 * near) / (right - left);
+  m[5] = (2 * near) / (top - bottom);
+  m[8] = (right + left) / (right - left);
+  m[9] = (top + bottom) / (top - bottom);
+  m[10] = (far + near) / (near - far);
+  m[11] = -1;
+  m[14] = (2 * far * near) / (near - far);
+  return m;
+}
+
 export function translation(x: number, y: number, z: number): Mat4 {
   const m = identity();
   m[12] = x;

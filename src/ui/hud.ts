@@ -7,27 +7,34 @@
 
 import type { WorldState } from '../core/index';
 import { referenceSteerAngle } from '../core/index';
+import type { MirrorAimSet, MirrorId } from '../render/mirror';
 
 /** Presentation-only readouts the HUD shows alongside the world state. */
 export interface HudFrameInfo {
   readonly fps: number;
   readonly pointerLocked: boolean;
+  /** Which mirror the player is currently trimming, if any. */
+  readonly adjustingMirror?: MirrorId | null;
+  readonly mirrorAim?: MirrorAimSet;
 }
 
 export class Hud {
   private readonly readout: HTMLElement;
   private readonly needle: HTMLElement;
   private readonly lockLabel: HTMLElement;
+  private readonly mirrorLabel: HTMLElement;
 
   constructor(root: HTMLElement) {
     root.innerHTML =
       '<div class="hud-readout"></div>' +
       '<div class="hud-rack"><div class="hud-rack-centre"></div>' +
       '<div class="hud-rack-needle"></div></div>' +
-      '<div class="hud-lock"></div>';
+      '<div class="hud-lock"></div>' +
+      '<div class="hud-mirror"></div>';
     this.readout = requireChild(root, '.hud-readout');
     this.needle = requireChild(root, '.hud-rack-needle');
     this.lockLabel = requireChild(root, '.hud-lock');
+    this.mirrorLabel = requireChild(root, '.hud-mirror');
   }
 
   update(world: WorldState, frame?: HudFrameInfo): void {
@@ -49,8 +56,27 @@ export class Hud {
         ? 'rack centred'
         : `rack ${Math.abs(v.rack) >= 0.999 ? 'FULL LOCK' : `${Math.round(Math.abs(v.rack) * 100)}%`}` +
           ` ${side}   ${roadWheelDegrees.toFixed(1)}°`;
+
+    // Mirror trim: only on screen while a mirror is selected, so it stays out of
+    // the way of driving.
+    const adjusting = frame?.adjustingMirror ?? null;
+    if (adjusting === null || !frame?.mirrorAim) {
+      this.mirrorLabel.textContent = '';
+    } else {
+      const aim = frame.mirrorAim[adjusting];
+      const degrees = (rad: number) => `${((rad * 180) / Math.PI).toFixed(1)}°`;
+      this.mirrorLabel.textContent =
+        `adjusting ${MIRROR_LABELS[adjusting]} mirror   ` +
+        `yaw ${degrees(aim.yaw)}  pitch ${degrees(aim.pitch)}   [IJKL aim, O reset, M next]`;
+    }
   }
 }
+
+const MIRROR_LABELS: Readonly<Record<MirrorId, string>> = {
+  interior: 'interior',
+  wingLeft: 'left wing',
+  wingRight: 'right wing',
+};
 
 function requireChild(root: HTMLElement, selector: string): HTMLElement {
   const el = root.querySelector(selector);

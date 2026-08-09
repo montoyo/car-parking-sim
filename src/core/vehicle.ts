@@ -31,8 +31,12 @@ export interface MirrorDefinition {
   /** Mirror centre in vehicle local coordinates (metres). */
   readonly mount: Vec3;
   /**
-   * Outward normal of the reflective surface in vehicle local coordinates,
-   * unit length. The renderer reflects the driver eye point through this plane.
+   * Normal of the reflective surface in vehicle local coordinates, unit length.
+   * The renderer reflects the driver eye point through this plane, so the sign
+   * carries no meaning — a plane reflects the same either way round — but the
+   * ANGLE is exactly the mirror's aim: it must bisect the driver's line of sight
+   * to the glass and the direction the mirror is meant to show. Each normal below
+   * is derived from that bisection rather than guessed.
    */
   readonly normal: Vec3;
   /** Reflective surface size (width x height, metres). */
@@ -263,23 +267,32 @@ export const VEHICLE: VehicleDefinition = {
   driverEyePoint: { x: 0.35, y: 0.37, z: 1.18 },
 
   mirrors: {
+    // Mount points are set relative to the eye the way a real car's are: the
+    // interior mirror about 0.6 m ahead and up at the top of the screen, the door
+    // mirrors nearly a metre ahead and standing 17 cm off the flank — which is
+    // what puts them in the driver's field of view at all, why the passenger-side
+    // one needs a deliberate glance, and what stands the reflected eye far enough
+    // outboard to see the car's own flank instead of the inside of the bodywork. Each normal bisects the line of sight from
+    // `driverEyePoint` to the glass and the direction the mirror shows. Interior: straight back, tipped a
+    // little down. Wings: back down their own flank, angled out far enough to
+    // clear the body and down enough to put the kerb in the bottom of the glass.
     interior: {
-      mount: { x: 0.62, y: 0.0, z: 1.28 },
-      normal: { x: 1, y: 0, z: 0 },
+      mount: { x: 0.86, y: 0.02, z: 1.3 },
+      normal: { x: 0.9476, y: -0.2912, z: 0.1312 },
       width: 0.26,
       height: 0.08,
       convexRadius: null,
     },
     wingLeft: {
-      mount: { x: 0.72, y: 0.95, z: 1.02 },
-      normal: { x: 0.34, y: 0.94, z: 0 },
+      mount: { x: 1.05, y: 1.08, z: 0.98 },
+      normal: { x: 0.9457, y: 0.3226, z: -0.0389 },
       width: 0.17,
       height: 0.1,
       convexRadius: 1.2,
     },
     wingRight: {
-      mount: { x: 0.72, y: -0.95, z: 1.02 },
-      normal: { x: 0.34, y: -0.94, z: 0 },
+      mount: { x: 1.05, y: -1.08, z: 0.98 },
+      normal: { x: 0.8835, y: -0.4682, z: 0.0147 },
       width: 0.17,
       height: 0.1,
       convexRadius: 1.2,

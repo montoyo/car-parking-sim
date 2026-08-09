@@ -10,11 +10,17 @@ import type { SimEvent, WorldState } from './core/index';
 import { FIXED_DT, createWorld, step } from './core/index';
 import { KeyboardAdapter } from './input/keyboard';
 import { LookController } from './input/look';
+import { MirrorAimController } from './input/mirror-aim';
 import { Renderer } from './render/renderer';
 import { interpolateVehicle } from './render/interpolate';
 import { Hud } from './ui/hud';
 
 const MAX_CATCHUP_SECONDS = 0.25;
+/**
+ * Frame rate below which the renderer is told it is over budget and starts
+ * updating the less important mirrors at a reduced rate.
+ */
+const FRAME_BUDGET_FPS = 50;
 
 function main(): void {
   const canvas = document.getElementById('viewport');
@@ -31,6 +37,9 @@ function main(): void {
   // shoulder checks in, two angles out.
   const look = new LookController();
   look.attach(canvas, window);
+  // Mirror aim is a device adapter too: pick a mirror with M, trim it with IJKL.
+  const mirrors = new MirrorAimController();
+  mirrors.attach(window);
 
   // V swaps between the driver's seat and the top-down debug camera.
   window.addEventListener('keydown', (e) => {
@@ -81,8 +90,22 @@ function main(): void {
     // The head advances on the display clock, not the fixed timestep: it is a
     // camera, not simulation state, so it must never feed back into the core.
     const gaze = look.sample(paused ? 0 : elapsed);
-    renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze);
-    hud.update(current, { fps: fps.sample(elapsed), pointerLocked: look.locked });
+    const mirrorAim = mirrors.sample(paused ? 0 : elapsed);
+    const smoothedFps = fps.sample(elapsed);
+    // Three extra passes have to be affordable on a laptop: if the display clock
+    // says they are not, the mirror schedule thins them out rather than the
+    // whole frame stuttering.
+    const overBudget = smoothedFps > 0 && smoothedFps < FRAME_BUDGET_FPS;
+    renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze, {
+      mirrorAim,
+      overBudget,
+    });
+    hud.update(current, {
+      fps: smoothedFps,
+      pointerLocked: look.locked,
+      adjustingMirror: mirrors.selected,
+      mirrorAim,
+    });
   };
 
   requestAnimationFrame(frame);

@@ -10,13 +10,13 @@ The player can adjust mirror aim. Mirror render targets are low resolution and m
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Three mirrors render as real reflected passes into render targets
-- [ ] Mirror camera pose is derived by reflecting the eye point through the mirror plane from the shared vehicle definition — the same numbers the physics reads
-- [ ] Each mirror's frustum is clipped to its outline, producing genuine blind spots
-- [ ] Wing mirrors are convex with a wider field of view and a radial warp; the interior mirror is flat
-- [ ] The car's own bodywork is visible in the wing mirrors
-- [ ] Mirror aim is adjustable by the player
-- [ ] Render targets are low resolution and may update at reduced rate, with priority given to the interior mirror and the manoeuvre-relevant wing mirror
-- [ ] Frame rate holds on a laptop with all three mirror passes active
+- [x] Three mirrors render as real reflected passes into render targets
+- [x] Mirror camera pose is derived by reflecting the eye point through the mirror plane from the shared vehicle definition — the same numbers the physics reads
+- [x] Each mirror's frustum is clipped to its outline, producing genuine blind spots
+- [x] Wing mirrors are convex with a wider field of view and a radial warp; the interior mirror is flat
+- [x] The car's own bodywork is visible in the wing mirrors
+- [x] Mirror aim is adjustable by the player
+- [x] Render targets are low resolution and may update at reduced rate, with priority given to the interior mirror and the manoeuvre-relevant wing mirror
+- [x] Frame rate holds on a laptop with all three mirror passes active
