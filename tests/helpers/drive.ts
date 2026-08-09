@@ -14,13 +14,14 @@
 
 import type {
   ControlInput,
+  Recording,
   Scorecard,
   SimEvent,
   Vec2,
   WheelId,
   WorldState,
 } from '../../src/core/index';
-import { FIXED_DT, NEUTRAL_INPUT, scoreAttempt, step } from '../../src/core/index';
+import { FIXED_DT, NEUTRAL_INPUT, Recorder, scoreAttempt, step } from '../../src/core/index';
 
 /** A held input, applied for a duration. Unspecified channels are neutral. */
 export interface DriveSegment {
@@ -38,6 +39,12 @@ export interface DriveResult {
 export interface DriveOptions {
   /** Fixed timestep to use. Defaults to the core's `FIXED_DT`. */
   readonly dt?: number;
+  /**
+   * A recorder fed every tick, exactly as the fixed-timestep loop feeds it. Tests
+   * about the replay use this rather than assembling a `Recording` by hand, so
+   * what they assert on is the recording a real attempt would produce.
+   */
+  readonly recorder?: Recorder;
 }
 
 export function input(overrides: Partial<ControlInput> = {}): ControlInput {
@@ -63,10 +70,25 @@ export function drive(
       world = result.world;
       events.push(...result.events);
       history.push(world);
+      options.recorder?.record(world, result.events);
     }
   }
 
   return { world, events, history };
+}
+
+/**
+ * Drive a script AND record it, the way the real loop does: one frame per tick,
+ * the tick's events handed to the recorder as they are emitted.
+ */
+export function driveRecorded(
+  initial: WorldState,
+  script: readonly DriveSegment[],
+  options: DriveOptions = {},
+): { readonly result: DriveResult; readonly recording: Recording } {
+  const recorder = new Recorder(initial);
+  const result = drive(initial, script, { ...options, recorder });
+  return { result, recording: recorder.snapshot() };
 }
 
 /** Drive a single held input for N seconds — the common case. */

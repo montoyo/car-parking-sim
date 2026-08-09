@@ -77,12 +77,89 @@
         justify-content: center;
         pointer-events: none;
       }
-      /* Breakdown screen: shown when the attempt ends. */
+      /* Top-down replay: fills the screen right of the docked breakdown card. */
+      #replay {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        bottom: 12px;
+        left: 672px;
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .replay-canvas {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 6px;
+        background: #181a1e;
+      }
+      .replay-readout {
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.55);
+        border-radius: 4px;
+        white-space: pre;
+        pointer-events: none;
+      }
+      .replay-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .replay-controls {
+        display: flex;
+        gap: 6px;
+      }
+      #replay button {
+        font: inherit;
+        color: #e6e6e6;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        padding: 3px 9px;
+        cursor: pointer;
+      }
+      #replay button:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+      .replay-scrub {
+        width: 100%;
+        accent-color: #6fd3ff;
+      }
+      .replay-events {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        max-height: 70px;
+        overflow-y: auto;
+      }
+      .replay-jump.sev-graze {
+        border-color: #ffd166;
+      }
+      .replay-jump.sev-knock {
+        border-color: #ff9f43;
+      }
+      .replay-jump.sev-impact {
+        border-color: #ff5252;
+      }
+      .replay-jump.gear {
+        border-color: #9be36f;
+      }
+      .replay-clean {
+        opacity: 0.6;
+      }
+      /* Breakdown screen: shown when the attempt ends, docked beside the replay. */
       #scorecard {
         position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
+        top: 12px;
+        left: 12px;
+        max-height: calc(100vh - 24px);
+        overflow-y: auto;
         padding: 16px 20px;
         background: rgba(8, 10, 12, 0.92);
         border: 1px solid rgba(255, 255, 255, 0.25);
@@ -157,9 +234,11 @@
     <div id="hud"></div>
     <div id="cue"></div>
     <div id="scorecard"></div>
+    <div id="replay"></div>
     <div id="controls">W/S throttle &amp; brake   A/D steer   F/N/R gear   Space handbrake
 mouse look (click to capture)   Q/E look left/right   C look back   Z recentre   V top-down
-M select mirror   I/J/K/L aim it   O reset aim   Backspace restart scenario</div>
+M select mirror   I/J/K/L aim it   O reset aim   Backspace restart scenario
+replay: space play/pause   , / . or arrows frame-step   [ / ] playback speed</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

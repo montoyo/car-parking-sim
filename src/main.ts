@@ -7,7 +7,7 @@
  */
 
 import type { SimEvent, WorldState } from './core/index';
-import { FIXED_DT, createWorld, resetWorld, scoreAttempt, step } from './core/index';
+import { FIXED_DT, Recorder, createWorld, resetWorld, scoreAttempt, step } from './core/index';
 import { KeyboardAdapter } from './input/keyboard';
 import { LookController } from './input/look';
 import { MirrorAimController } from './input/mirror-aim';
@@ -16,6 +16,7 @@ import { interpolateVehicle } from './render/interpolate';
 import { BestScores } from './ui/bests';
 import { ContactCue } from './ui/contact-cue';
 import { Hud } from './ui/hud';
+import { ReplayScreen } from './ui/replay';
 import { ScorecardScreen } from './ui/scorecard';
 
 const MAX_CATCHUP_SECONDS = 0.25;
@@ -30,8 +31,11 @@ function main(): void {
   const hudRoot = document.getElementById('hud');
   const cueRoot = document.getElementById('cue');
   const cardRoot = document.getElementById('scorecard');
-  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot || !cueRoot || !cardRoot) {
-    throw new Error('Expected #viewport, #hud, #cue and #scorecard elements in the document.');
+  const replayRoot = document.getElementById('replay');
+  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot || !cueRoot || !cardRoot || !replayRoot) {
+    throw new Error(
+      'Expected #viewport, #hud, #cue, #scorecard and #replay elements in the document.',
+    );
   }
 
   const renderer = new Renderer(canvas);
@@ -43,6 +47,11 @@ function main(): void {
   // function over the world the attempt ended in and the log it produced.
   const scorecard = new ScorecardScreen(cardRoot);
   const bests = new BestScores();
+  // The replay reads the recording the loop below appends to every tick — playback
+  // of what happened, never a re-simulation of it. Retry comes straight off the
+  // replay screen so the loop from mistake to next attempt is one click.
+  const replay = new ReplayScreen(replayRoot, () => restart());
+  replay.attach(window);
   const keyboard = new KeyboardAdapter();
   keyboard.attach(window);
   // The head is a device adapter like any other: mouse look plus one-button
@@ -66,8 +75,10 @@ function main(): void {
 
   let previous: WorldState = createWorld('parallel-park');
   let current: WorldState = previous;
-  /** The whole attempt's event log — what scoring and (ticket 10) replay consume. */
+  /** The whole attempt's event log — what scoring and the replay markers consume. */
   let log: SimEvent[] = [];
+  /** One frame per fixed tick: the recording the replay plays back. */
+  let recorder = new Recorder(current);
   let accumulator = 0;
   let lastFrameMs: number | null = null;
   let paused = false;
@@ -91,7 +102,9 @@ function main(): void {
     previous = current;
     accumulator = 0;
     log = [];
+    recorder = new Recorder(current);
     scorecard.hide();
+    replay.hide();
   };
 
   /**
@@ -102,6 +115,8 @@ function main(): void {
   const finish = (): void => {
     const card = scoreAttempt(current, log);
     scorecard.show(card, bests.submit(card));
+    // And straight into the top-down replay of the attempt just driven.
+    replay.show(recorder.snapshot());
   };
 
   const frame = (nowMs: number): void => {
@@ -121,6 +136,9 @@ function main(): void {
         current = result.world;
         accumulator -= FIXED_DT;
         log.push(...result.events);
+        // A frame per fixed tick, with this tick's events: the recording IS the
+        // replay, so it is appended here and nowhere else.
+        recorder.record(current, result.events);
         report(result.events);
         cue.report(result.events);
         if (current.completion.status !== 'driving') finish();
@@ -135,6 +153,9 @@ function main(): void {
     const smoothedFps = fps.sample(elapsed);
     // The banner fades on the display clock — it is a cue, not simulation state.
     cue.update(paused ? 0 : elapsed);
+    // Replay playback also runs on the display clock: its frame index advances at
+    // the chosen rate against the recording's fixed timestep.
+    replay.update(paused ? 0 : elapsed);
     // Three extra passes have to be affordable on a laptop: if the display clock
     // says they are not, the mirror schedule thins them out rather than the
     // whole frame stuttering.

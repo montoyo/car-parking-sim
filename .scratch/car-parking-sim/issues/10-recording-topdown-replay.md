@@ -8,15 +8,15 @@ The player can scrub the timeline, play slower or faster, step frame by frame, a
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every fixed tick appends a frame record with the fields above; the event log is stored with tick indices
-- [ ] Replay renders recorded frames and never re-simulates
-- [ ] Top-down orthographic view draws body-centre and per-wheel traces
-- [ ] Direction of travel and gear-change points are marked on the trace
-- [ ] Contact events are marked at their recorded world positions
-- [ ] Scrub, variable playback speed, and frame-step all work by setting a frame index
-- [ ] Jump-to-event from the timeline for each contact
-- [ ] Rack position and gear are displayed for the scrubbed frame
-- [ ] Retry from the replay screen restarts the scenario
-- [ ] Test: the number of replay contact markers equals the number of coalesced contact events scoring counted
+- [x] Every fixed tick appends a frame record with the fields above; the event log is stored with tick indices
+- [x] Replay renders recorded frames and never re-simulates
+- [x] Top-down orthographic view draws body-centre and per-wheel traces
+- [x] Direction of travel and gear-change points are marked on the trace
+- [x] Contact events are marked at their recorded world positions
+- [x] Scrub, variable playback speed, and frame-step all work by setting a frame index
+- [x] Jump-to-event from the timeline for each contact
+- [x] Rack position and gear are displayed for the scrubbed frame
+- [x] Retry from the replay screen restarts the scenario
+- [x] Test: the number of replay contact markers equals the number of coalesced contact events scoring counted

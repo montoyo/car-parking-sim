@@ -110,6 +110,26 @@ export {
   fullyInsideBay,
 } from './scoring';
 
+export type {
+  Recording,
+  Frame,
+  RecordedWheel,
+  ReplayMarker,
+  ContactMarker,
+  GearChangeMarker,
+} from './recording';
+export {
+  Recorder,
+  frameOf,
+  frameAt,
+  frameIndexForTick,
+  contactMarkers,
+  gearChangeMarkers,
+  replayMarkers,
+  wheelTrace,
+  bodyTrace,
+} from './recording';
+
 export type { StepResult } from './step';
 export { step, FIXED_DT, wrapAngle } from './step';
 
