@@ -26,6 +26,8 @@ jobs:
         run: |
           npm ci
           npm run build
+        env:
+          BASE_PATH: /car-parking-sim/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
