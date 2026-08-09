@@ -8,13 +8,18 @@
 
 import type { SimEvent, WorldState } from './core/index';
 import { FIXED_DT, Recorder, createWorld, resetWorld, scoreAttempt, step } from './core/index';
+import { Bindings, assertNoDuplicateBindings, keyLabel } from './input/bindings';
+import { combineInputs } from './input/combine';
+import { GamepadAdapter } from './input/gamepad';
 import { KeyboardAdapter } from './input/keyboard';
 import { LookController } from './input/look';
 import { MirrorAimController } from './input/mirror-aim';
 import { Renderer } from './render/renderer';
 import { interpolateVehicle } from './render/interpolate';
+import { AudioSettings } from './ui/audio';
 import { BestScores } from './ui/bests';
 import { ContactCue } from './ui/contact-cue';
+import { ControlsPanel } from './ui/controls-panel';
 import { Hud } from './ui/hud';
 import { ReplayScreen } from './ui/replay';
 import type { ScenarioChoice } from './ui/scenario-select';
@@ -35,16 +40,19 @@ function main(): void {
   const cardRoot = document.getElementById('scorecard');
   const replayRoot = document.getElementById('replay');
   const selectRoot = document.getElementById('select');
+  const controlsRoot = document.getElementById('controls');
   if (
     !(canvas instanceof HTMLCanvasElement) ||
     !hudRoot ||
     !cueRoot ||
     !cardRoot ||
     !replayRoot ||
-    !selectRoot
+    !selectRoot ||
+    !controlsRoot
   ) {
     throw new Error(
-      'Expected #viewport, #hud, #cue, #scorecard, #replay and #select elements in the document.',
+      'Expected #viewport, #hud, #cue, #scorecard, #replay, #select and #controls elements ' +
+        'in the document.',
     );
   }
 
@@ -67,28 +75,62 @@ function main(): void {
   // the exact parameter set currently dialled in.
   const select = new ScenarioSelect(selectRoot, bests, (choice) => begin(choice));
   select.attach(window);
-  const keyboard = new KeyboardAdapter();
+  // One registry owns EVERY key — driving, head, mirrors and session alike — so no
+  // two actions can claim the same code. That is checked here at startup as well as
+  // in the test suite, because a double-booked key (KeyR was once both gear-reverse
+  // and restart) is invisible until a player hits it.
+  const bindings = new Bindings();
+  assertNoDuplicateBindings(bindings.snapshot());
+
+  // Audio preferences, remembered between sessions and pushed into the cue below.
+  const audio = new AudioSettings();
+  audio.onChange((state) => {
+    cue.setMuted(state.muted);
+    cue.setVolume(state.volume);
+  });
+
+  // The control reference IS the remapping screen: one list, generated from the
+  // registry, so what it shows is what the adapters listen for.
+  const controls = new ControlsPanel(controlsRoot, bindings, audio);
+  controls.attach(window);
+
+  // Both adapters are handed a getter, not a snapshot, so a rebind takes effect on
+  // the next key press rather than on the next reload.
+  const keyboard = new KeyboardAdapter(() => bindings.keyBindings());
   keyboard.attach(window);
+  // The analogue device: stick straight to rack target, triggers to pedals. It
+  // produces the same normalised `ControlInput` the keyboard does.
+  const gamepad = new GamepadAdapter();
   // The head is a device adapter like any other: mouse look plus one-button
   // shoulder checks in, two angles out.
-  const look = new LookController();
+  const look = new LookController(() => bindings.lookBindings());
   look.attach(canvas, window);
   // Mirror aim is a device adapter too: pick a mirror with M, trim it with IJKL.
-  const mirrors = new MirrorAimController();
+  const mirrors = new MirrorAimController(() => bindings.mirrorAimBindings());
   mirrors.attach(window);
 
-  // V swaps between the driver's seat and the top-down debug camera.
   window.addEventListener('keydown', (e) => {
-    // V is the live debug camera; while the replay owns the viewport its own T
+    // The panels are modal: while one is up its own keys are the ones that matter.
+    if (bindings.matches('controlsToggle', e.code) && !e.repeat) {
+      e.preventDefault();
+      controls.toggle();
+      return;
+    }
+    if (bindings.matches('audioMute', e.code) && !e.repeat) audio.toggleMuted();
+    if (bindings.matches('volumeDown', e.code)) audio.nudgeVolume(-1);
+    if (bindings.matches('volumeUp', e.code)) audio.nudgeVolume(1);
+    if (select.visible || controls.visible) return;
+    // The live debug camera; while the replay owns the viewport its own view
     // toggle is the one that matters.
-    if (select.visible) return;
-    if (e.code === 'KeyV' && !(replay.visible && replay.view === 'first-person')) {
+    if (
+      bindings.matches('viewToggle', e.code) &&
+      !(replay.visible && replay.view === 'first-person')
+    ) {
       renderer.setViewMode(renderer.mode === 'first-person' ? 'top-down' : 'first-person');
     }
     // Instant restart: back to the scenario's approach pose, same layout, same
     // tuning, so a botched approach costs nothing but the attempt.
-    // Not KeyR — that is gear-reverse in the keyboard adapter's bindings.
-    if (e.code === 'Backspace' && !e.repeat) restart();
+    if (bindings.matches('restart', e.code) && !e.repeat) restart();
   });
 
   let previous: WorldState = createWorld(select.choice().id, {
@@ -160,13 +202,23 @@ function main(): void {
     const elapsed = lastFrameMs === null ? 0 : (nowMs - lastFrameMs) / 1000;
     lastFrameMs = nowMs;
 
-    // The menu is a pause: the player is reading pass criteria, not driving.
-    if (!paused && !select.visible) {
+    // A pad's state is polled, not evented, so it is read once per displayed frame
+    // and held across the fixed ticks that frame drives.
+    const padInput = gamepad.sample();
+    controls.setPadStatus(gamepad.connected, gamepad.inUse);
+
+    // The menu and the control panel are pauses: the player is reading pass criteria
+    // or rebinding keys, not driving.
+    if (!paused && !select.visible && !controls.visible) {
       accumulator = Math.min(accumulator + elapsed, MAX_CATCHUP_SECONDS);
       // A finished attempt is frozen: the player is reading their score, not
       // driving. Backspace restarts.
       while (accumulator >= FIXED_DT && current.completion.status === 'driving') {
-        const input = keyboard.sample(FIXED_DT);
+        // Two devices, one normalised input: the core never learns which was used.
+        const input = combineInputs(
+          { input: keyboard.sample(FIXED_DT), gearRequest: keyboard.gearRequest },
+          padInput === null ? null : { input: padInput, gearRequest: gamepad.gearRequest },
+        );
         const result = step(current, input, FIXED_DT);
         previous = current;
         current = result.world;
@@ -224,6 +276,9 @@ function main(): void {
       pointerLocked: look.locked,
       adjustingMirror: mirrors.selected,
       mirrorAim,
+      audio: audio.describe(),
+      controlsKey: keyLabel(bindings.codes('controlsToggle')[0] ?? 'KeyH'),
+      gamepad: gamepad.connected,
     });
   };
 

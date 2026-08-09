@@ -39,6 +39,8 @@ export class ContactCue {
   /** Created lazily: a browser only allows audio after the first user gesture. */
   private audio: AudioContext | null = null;
   private muted = false;
+  /** Factor on every cue's gain — the player's volume setting. */
+  private volume = 1;
 
   constructor(root: HTMLElement) {
     root.innerHTML = '';
@@ -50,6 +52,11 @@ export class ContactCue {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
+  }
+
+  /** 0..1. Severity still sets the relative loudness; this scales all of it. */
+  setVolume(volume: number): void {
+    this.volume = volume < 0 ? 0 : volume > 1 ? 1 : volume;
   }
 
   /** Feed one tick's events. Non-contact events are ignored. */
@@ -86,8 +93,9 @@ export class ContactCue {
    * for an impact, a light tick for a graze. Synthesised rather than sampled so
    * there is no asset to load.
    */
-  private thump(gain: number, frequency: number): void {
-    if (this.muted) return;
+  private thump(rawGain: number, frequency: number): void {
+    if (this.muted || this.volume <= 0) return;
+    const gain = rawGain * this.volume;
     const context = this.ensureAudio();
     if (context === null) return;
 

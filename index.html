@@ -19,21 +19,140 @@
         width: 100vw;
         height: 100vh;
       }
-      #hud,
-      #controls {
+      #hud {
         position: fixed;
         left: 12px;
+        top: 12px;
         padding: 6px 10px;
         background: rgba(0, 0, 0, 0.45);
         border-radius: 4px;
         white-space: pre;
       }
-      #hud {
-        top: 12px;
-      }
+      /* Control reference / remapping / audio: opened with H, and a pause while up. */
       #controls {
-        bottom: 12px;
-        opacity: 0.75;
+        position: fixed;
+        inset: 0;
+        display: none;
+        padding: 26px 30px;
+        background: rgba(8, 10, 12, 0.94);
+        overflow-y: auto;
+      }
+      .controls-head {
+        font-size: 18px;
+        letter-spacing: 0.06em;
+        margin-bottom: 16px;
+      }
+      .controls-hint {
+        margin-left: 18px;
+        font-size: 12px;
+        opacity: 0.55;
+        letter-spacing: 0;
+      }
+      .controls-columns {
+        display: flex;
+        gap: 26px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .controls-group {
+        margin-bottom: 16px;
+        min-width: 260px;
+      }
+      .controls-group-name {
+        opacity: 0.6;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-size: 11px;
+        margin-bottom: 6px;
+      }
+      .controls-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        font: inherit;
+        text-align: left;
+        color: #e6e6e6;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin-bottom: 4px;
+        cursor: pointer;
+      }
+      button.controls-row:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .controls-row.controls-fixed {
+        cursor: default;
+        opacity: 0.55;
+      }
+      .controls-label {
+        flex: 1;
+      }
+      .controls-key {
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 3px;
+        padding: 0 6px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .controls-key.controls-capturing {
+        border-color: #6fd3ff;
+        color: #6fd3ff;
+      }
+      .controls-pad-status,
+      .controls-pad-line {
+        opacity: 0.8;
+        margin-bottom: 3px;
+      }
+      .controls-audio {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .controls-audio input {
+        flex: 1;
+        max-width: 220px;
+        accent-color: #6fd3ff;
+      }
+      .controls-audio-value {
+        width: 7ch;
+      }
+      .controls-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-top: 8px;
+      }
+      .controls-note {
+        opacity: 0.55;
+      }
+      #controls button[data-act] {
+        font: inherit;
+        color: #e6e6e6;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        padding: 4px 12px;
+        cursor: pointer;
+      }
+      #controls button[data-act]:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      /* Speed bar: square-root scaled, so a creep is visible and not pinned at zero. */
+      .hud-speed {
+        position: relative;
+        width: 180px;
+        height: 5px;
+        margin: 4px 0 4px;
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .hud-speed-fill {
+        height: 100%;
+        width: 0;
+        background: #9be36f;
       }
       .hud-rack {
         position: relative;
@@ -384,12 +503,7 @@
     <div id="scorecard"></div>
     <div id="replay"></div>
     <div id="select"></div>
-    <div id="controls">W/S throttle &amp; brake   A/D steer   F/N/R gear   Space handbrake
-mouse look (click to capture)   Q/E look left/right   C look back   Z recentre   V top-down
-M select mirror   I/J/K/L aim it   O reset aim   Backspace restart scenario
-P scenario menu (1-5 pick, Enter start)
-replay: space play/pause   , / . or arrows frame-step   [ / ] playback speed
-        T top-down / driver's seat   G reference line</div>
+    <div id="controls"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

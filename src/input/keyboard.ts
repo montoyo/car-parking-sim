@@ -8,6 +8,8 @@
 
 import type { ControlInput, Gear } from '../core/index';
 import { clamp } from '../core/index';
+import { DEFAULT_BINDING_SET, keyBindingsFrom } from './bindings';
+import { nextInputRequest } from './request';
 
 /** Rate at which held left/right winds the target on, in units of [-1,1] per second. */
 const WIND_ON_RATE = 1.6;
@@ -28,16 +30,17 @@ export interface KeyBindings {
   readonly gearReverse: readonly string[];
 }
 
-export const DEFAULT_BINDINGS: KeyBindings = {
-  steerLeft: ['ArrowLeft', 'KeyA'],
-  steerRight: ['ArrowRight', 'KeyD'],
-  throttle: ['ArrowUp', 'KeyW'],
-  brake: ['ArrowDown', 'KeyS'],
-  handbrake: ['Space'],
-  gearForward: ['KeyF', 'Digit1'],
-  gearNeutral: ['KeyN', 'Digit2'],
-  gearReverse: ['KeyR', 'Digit3'],
-};
+/**
+ * The shipped keys are not written here: they come from the one binding registry,
+ * which is also what guarantees none of them collides with a non-driving key.
+ */
+export const DEFAULT_BINDINGS: KeyBindings = keyBindingsFrom(DEFAULT_BINDING_SET);
+
+/**
+ * Bindings may be handed over as a fixed set or as a getter, so that remapping
+ * takes effect immediately without rebuilding the adapter.
+ */
+export type KeyBindingsSource = KeyBindings | (() => KeyBindings);
 
 export class KeyboardAdapter {
   private readonly held = new Set<string>();
@@ -45,17 +48,35 @@ export class KeyboardAdapter {
   private throttle = 0;
   private brake = 0;
   private gear: Gear = 'neutral';
+  private gearRequestSequence = 0;
+  private readonly bindingsOf: () => KeyBindings;
 
-  constructor(private readonly bindings: KeyBindings = DEFAULT_BINDINGS) {}
+  constructor(bindings: KeyBindingsSource = DEFAULT_BINDINGS) {
+    this.bindingsOf = typeof bindings === 'function' ? bindings : () => bindings;
+  }
+
+  /** The bindings in force right now. */
+  get bindings(): KeyBindings {
+    return this.bindingsOf();
+  }
+
+  /** When the keyboard last asked for a gear, for merging with another device. */
+  get gearRequest(): number {
+    return this.gearRequestSequence;
+  }
 
   /** Attach listeners to a DOM target. Returns a detach function. */
   attach(target: Window | HTMLElement): () => void {
     const down = (e: Event) => {
       const code = (e as KeyboardEvent).code;
+      const bindings = this.bindings;
       this.held.add(code);
-      if (this.bindings.gearForward.includes(code)) this.gear = 'forward';
-      else if (this.bindings.gearNeutral.includes(code)) this.gear = 'neutral';
-      else if (this.bindings.gearReverse.includes(code)) this.gear = 'reverse';
+      let requested = true;
+      if (bindings.gearForward.includes(code)) this.gear = 'forward';
+      else if (bindings.gearNeutral.includes(code)) this.gear = 'neutral';
+      else if (bindings.gearReverse.includes(code)) this.gear = 'reverse';
+      else requested = false;
+      if (requested) this.gearRequestSequence = nextInputRequest();
       if (this.isBound(code)) e.preventDefault();
     };
     const up = (e: Event) => {
@@ -75,8 +96,9 @@ export class KeyboardAdapter {
 
   /** Advance the ramps by `dt` seconds and read the resulting input. */
   sample(dt: number): ControlInput {
-    const left = this.any(this.bindings.steerLeft);
-    const right = this.any(this.bindings.steerRight);
+    const bindings = this.bindings;
+    const left = this.any(bindings.steerLeft);
+    const right = this.any(bindings.steerRight);
     const steerDir = (left ? 1 : 0) - (right ? 1 : 0);
 
     if (steerDir !== 0) {
@@ -86,14 +108,14 @@ export class KeyboardAdapter {
       this.steer = Math.abs(this.steer) <= decay ? 0 : this.steer - Math.sign(this.steer) * decay;
     }
 
-    this.throttle = ramp(this.throttle, this.any(this.bindings.throttle), dt);
-    this.brake = ramp(this.brake, this.any(this.bindings.brake), dt);
+    this.throttle = ramp(this.throttle, this.any(bindings.throttle), dt);
+    this.brake = ramp(this.brake, this.any(bindings.brake), dt);
 
     return {
       steer: this.steer,
       throttle: this.throttle,
       brake: this.brake,
-      handbrake: this.any(this.bindings.handbrake),
+      handbrake: this.any(bindings.handbrake),
       gear: this.gear,
     };
   }

@@ -10,6 +10,7 @@
 
 import type { MirrorAim, MirrorAimSet, MirrorId } from '../render/mirror';
 import { MIRROR_IDS, NEUTRAL_MIRROR_AIM, clampMirrorAim } from '../render/mirror';
+import { DEFAULT_BINDING_SET, mirrorAimBindingsFrom } from './bindings';
 
 /** Radians per second of glass movement while an adjust key is held. */
 const ADJUST_RATE = 0.14;
@@ -25,14 +26,10 @@ export interface MirrorAimBindings {
   readonly reset: readonly string[];
 }
 
-export const DEFAULT_MIRROR_AIM_BINDINGS: MirrorAimBindings = {
-  select: ['KeyM'],
-  aimUp: ['KeyI'],
-  aimDown: ['KeyK'],
-  aimLeft: ['KeyJ'],
-  aimRight: ['KeyL'],
-  reset: ['KeyO'],
-};
+/** Shipped keys come from the one binding registry — see `input/bindings.ts`. */
+export const DEFAULT_MIRROR_AIM_BINDINGS: MirrorAimBindings = mirrorAimBindingsFrom(
+  DEFAULT_BINDING_SET,
+);
 
 export class MirrorAimController {
   private readonly held = new Set<string>();
@@ -40,7 +37,15 @@ export class MirrorAimController {
   /** Which mirror the adjust keys act on; `null` means none is selected. */
   private selection: MirrorId | null = null;
 
-  constructor(private readonly bindings: MirrorAimBindings = DEFAULT_MIRROR_AIM_BINDINGS) {}
+  private readonly bindingsOf: () => MirrorAimBindings;
+
+  constructor(bindings: MirrorAimBindings | (() => MirrorAimBindings) = DEFAULT_MIRROR_AIM_BINDINGS) {
+    this.bindingsOf = typeof bindings === 'function' ? bindings : () => bindings;
+  }
+
+  private get bindings(): MirrorAimBindings {
+    return this.bindingsOf();
+  }
 
   /** Attach the adjust keys to a DOM target. Returns a detach function. */
   attach(target: Window | HTMLElement = window): () => void {

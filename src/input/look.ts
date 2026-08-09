@@ -9,6 +9,7 @@
 
 import type { LookState } from '../render/camera';
 import { LOOK_AHEAD, SNAP_LOOK, approachLook, clampLook } from '../render/camera';
+import { DEFAULT_BINDING_SET, lookBindingsFrom } from './bindings';
 
 /** Radians of view rotation per pixel of mouse movement. */
 const MOUSE_SENSITIVITY = 0.0022;
@@ -25,12 +26,8 @@ export interface LookBindings {
   readonly lookAhead: readonly string[];
 }
 
-export const DEFAULT_LOOK_BINDINGS: LookBindings = {
-  lookLeft: ['KeyQ'],
-  lookRight: ['KeyE'],
-  lookBack: ['KeyC'],
-  lookAhead: ['KeyZ'],
-};
+/** Shipped keys come from the one binding registry — see `input/bindings.ts`. */
+export const DEFAULT_LOOK_BINDINGS: LookBindings = lookBindingsFrom(DEFAULT_BINDING_SET);
 
 export class LookController {
   private readonly held = new Set<string>();
@@ -39,7 +36,15 @@ export class LookController {
   private current: LookState = LOOK_AHEAD;
   private pointerLocked = false;
 
-  constructor(private readonly bindings: LookBindings = DEFAULT_LOOK_BINDINGS) {}
+  private readonly bindingsOf: () => LookBindings;
+
+  constructor(bindings: LookBindings | (() => LookBindings) = DEFAULT_LOOK_BINDINGS) {
+    this.bindingsOf = typeof bindings === 'function' ? bindings : () => bindings;
+  }
+
+  private get bindings(): LookBindings {
+    return this.bindingsOf();
+  }
 
   /** Attach mouse-look and snap keys. Returns a detach function. */
   attach(canvas: HTMLCanvasElement, keyTarget: Window | HTMLElement = window): () => void {
