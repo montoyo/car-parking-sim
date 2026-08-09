@@ -64,7 +64,9 @@ function main(): void {
 
   // V swaps between the driver's seat and the top-down debug camera.
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyV') {
+    // V is the live debug camera; while the replay owns the viewport its own T
+    // toggle is the one that matters.
+    if (e.code === 'KeyV' && !(replay.visible && replay.view === 'first-person')) {
       renderer.setViewMode(renderer.mode === 'first-person' ? 'top-down' : 'first-person');
     }
     // Instant restart: back to the scenario's approach pose, same layout, same
@@ -160,11 +162,26 @@ function main(): void {
     // says they are not, the mirror schedule thins them out rather than the
     // whole frame stuttering.
     const overBudget = smoothedFps > 0 && smoothedFps < FRAME_BUDGET_FPS;
-    renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze, {
-      scenario: current.scenario,
-      mirrorAim,
-      overBudget,
-    });
+    // While the replay is being watched from the driver's seat, the WebGL pass
+    // draws the RECORDED frame the player has scrubbed to instead of the live
+    // world — same camera, same mirrors, playback rather than re-simulation. The
+    // replay screen keeps its scrub position across the toggle, so the two views
+    // are two windows on one moment.
+    const replayed = replay.visible && replay.view === 'first-person' ? replay.vehicleAtScrub() : null;
+    if (replayed) {
+      renderer.setViewMode('first-person');
+      renderer.render(replayed, gaze, {
+        scenario: replay.scenario ?? current.scenario,
+        mirrorAim,
+        overBudget,
+      });
+    } else {
+      renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze, {
+        scenario: current.scenario,
+        mirrorAim,
+        overBudget,
+      });
+    }
     hud.update(current, {
       fps: smoothedFps,
       pointerLocked: look.locked,

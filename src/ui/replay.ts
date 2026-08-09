@@ -23,7 +23,19 @@
  * limited colour vision.
  */
 
-import type { Bay, ContactMarker, Frame, GearChangeMarker, Kerb, Obstacle, Recording, Vec2, WheelId } from '../core/index';
+import type {
+  Bay,
+  ContactMarker,
+  Frame,
+  GearChangeMarker,
+  Kerb,
+  Obstacle,
+  Recording,
+  Scenario,
+  Vec2,
+  VehicleState,
+  WheelId,
+} from '../core/index';
 import {
   FIXED_DT,
   VEHICLE,
@@ -34,9 +46,11 @@ import {
   frameAt,
   gearChangeMarkers,
   obstaclePolygon,
+  referenceLine,
   wheelPosition,
   wheelTrace,
 } from '../core/index';
+import { interpolateFrames } from '../render/interpolate';
 
 /** Playback rates, cycled by the speed button. Slow is the useful end. */
 const RATES: readonly number[] = [0.1, 0.25, 0.5, 1, 2];
@@ -60,11 +74,17 @@ const TRACE_COLOUR: Readonly<Record<WheelId, string>> = {
   rearRight: '#f4a13a',
 };
 
+/** The reference line: a clean path, drawn faintly so it never outshouts the trace. */
+const REFERENCE_COLOUR = 'rgba(155, 227, 111, 0.75)';
+
 const SEVERITY_COLOUR = {
   graze: '#ffd166',
   knock: '#ff9f43',
   impact: '#ff5252',
 } as const;
+
+/** Which camera the recorded frames are watched through. */
+export type ReplayView = 'top-down' | 'first-person';
 
 interface ViewTransform {
   readonly scale: number;
@@ -81,6 +101,8 @@ export class ReplayScreen {
   private readonly events: HTMLElement;
   private readonly playButton: HTMLButtonElement;
   private readonly speedButton: HTMLButtonElement;
+  private readonly viewButton: HTMLButtonElement;
+  private readonly referenceButton: HTMLButtonElement;
 
   private recording: Recording | null = null;
   private markers: readonly ContactMarker[] = [];
@@ -89,7 +111,16 @@ export class ReplayScreen {
   private index = 0;
   private playing = false;
   private rateIndex = DEFAULT_RATE_INDEX;
-  private view: ViewTransform = { scale: 20, originX: 0, originY: 0 };
+  private transform: ViewTransform = { scale: 20, originX: 0, originY: 0 };
+  /**
+   * Which camera the SAME recorded frames are shown through. Nothing about
+   * playback changes with it — `index` is still the whole of the playback state,
+   * so scrub, frame-step, speed and event-jump behave identically in both, and
+   * switching view keeps the player exactly where they were scrubbed to.
+   */
+  private viewMode: ReplayView = 'top-down';
+  private reference: readonly Vec2[] = [];
+  private referenceOn = false;
 
   constructor(root: HTMLElement, private readonly onRetry: () => void) {
     this.root = root;
@@ -102,6 +133,8 @@ export class ReplayScreen {
       '<button data-act="play" title="play / pause (space)">play</button>' +
       '<button data-act="stepForward" title="frame forward (.)">&gt;|</button>' +
       '<button data-act="speed" title="playback speed ([ / ])">1x</button>' +
+      '<button data-act="view" title="top-down / driver\'s seat (T)">driver\'s seat</button>' +
+      '<button data-act="reference" title="reference line overlay (G)">ref line: off</button>' +
       '<button data-act="retry" title="restart the scenario (Backspace)">retry</button>' +
       '</div>' +
       '<input class="replay-scrub" type="range" min="0" max="1" step="1" value="0" />' +
@@ -117,6 +150,8 @@ export class ReplayScreen {
     this.events = requireElement(root, '.replay-events', HTMLElement);
     this.playButton = requireElement(root, '[data-act="play"]', HTMLButtonElement);
     this.speedButton = requireElement(root, '[data-act="speed"]', HTMLButtonElement);
+    this.viewButton = requireElement(root, '[data-act="view"]', HTMLButtonElement);
+    this.referenceButton = requireElement(root, '[data-act="reference"]', HTMLButtonElement);
 
     this.scrub.addEventListener('input', () => {
       this.playing = false;
@@ -130,6 +165,8 @@ export class ReplayScreen {
       if (act === 'stepBack') this.step(-1);
       if (act === 'stepForward') this.step(1);
       if (act === 'speed') this.cycleRate();
+      if (act === 'view') this.toggleView();
+      if (act === 'reference') this.toggleReference();
       if (act === 'retry') this.onRetry();
       const jump = target.dataset.frame;
       if (jump !== undefined) {
@@ -155,11 +192,42 @@ export class ReplayScreen {
       if (e.code === 'ArrowRight') this.step(1);
       if (e.code === 'BracketLeft') this.cycleRate(-1);
       if (e.code === 'BracketRight') this.cycleRate(1);
+      if (e.code === 'KeyT') this.toggleView();
+      if (e.code === 'KeyG') this.toggleReference();
     });
   }
 
   get visible(): boolean {
     return this.recording !== null;
+  }
+
+  /** Which camera the replay is being watched through. */
+  get view(): ReplayView {
+    return this.viewMode;
+  }
+
+  /** The layout the recorded attempt was driven in, for the first-person pass. */
+  get scenario(): Scenario | null {
+    return this.recording?.scenario ?? null;
+  }
+
+  /**
+   * The scrubbed moment as a vehicle state, for rendering the recording through
+   * the driver's camera. Interpolated between the two frames either side of a
+   * fractional index, so playback is smooth at the display rate rather than
+   * stepping at the fixed timestep. `null` when nothing is being replayed.
+   */
+  vehicleAtScrub(): VehicleState | null {
+    const recording = this.recording;
+    if (recording === null) return null;
+    const last = recording.frames.length - 1;
+    const lower = Math.min(Math.floor(this.index), last);
+    const upper = Math.min(lower + 1, last);
+    return interpolateFrames(
+      frameAt(recording, lower),
+      frameAt(recording, upper),
+      this.index - lower,
+    );
   }
 
   /** Open the replay on a finished attempt, parked on its last frame. */
@@ -170,6 +238,8 @@ export class ReplayScreen {
     this.index = Math.max(0, recording.frames.length - 1);
     this.playing = false;
     this.rateIndex = DEFAULT_RATE_INDEX;
+    this.reference = referenceLine(recording.scenario);
+    this.setViewMode('top-down');
     this.scrub.max = String(Math.max(0, recording.frames.length - 1));
     this.scrub.value = String(this.index);
     this.events.innerHTML = this.eventButtons();
@@ -222,6 +292,30 @@ export class ReplayScreen {
     this.speedButton.textContent = `${this.rate}x`;
   }
 
+  private toggleView(): void {
+    this.setViewMode(this.viewMode === 'top-down' ? 'first-person' : 'top-down');
+  }
+
+  /**
+   * Swapping camera touches nothing but which surface is on screen: the frame
+   * index, playing state and rate all survive, which is what makes the toggle a
+   * way of reconciling the two views of one moment.
+   */
+  private setViewMode(mode: ReplayView): void {
+    this.viewMode = mode;
+    this.viewButton.textContent = mode === 'top-down' ? "driver's seat" : 'top-down';
+    // In the driver's seat the WebGL viewport underneath IS the picture, so the
+    // diagram canvas steps out of the way and only the controls remain.
+    this.canvas.style.display = mode === 'top-down' ? '' : 'none';
+    this.draw();
+  }
+
+  private toggleReference(): void {
+    this.referenceOn = !this.referenceOn;
+    this.referenceButton.textContent = `ref line: ${this.referenceOn ? 'on' : 'off'}`;
+    this.draw();
+  }
+
   private step(frames: number): void {
     this.playing = false;
     this.playButton.textContent = 'play';
@@ -257,11 +351,17 @@ export class ReplayScreen {
     const recording = this.recording;
     if (recording === null) return;
     const context = this.context;
+    // In the driver's seat there is no diagram to draw — the readout below still
+    // reports the scrubbed frame, and the WebGL pass draws the car's-eye view.
+    if (this.viewMode === 'first-person') {
+      this.updateReadout(frameAt(recording, this.index));
+      return;
+    }
     this.resize();
     // Before the browser has laid the canvas out there is nothing to fit to; the
     // next display frame calls `update` and draws properly.
     if (this.canvas.width <= 1 || this.canvas.height <= 1) return;
-    this.view = this.fit(recording);
+    this.transform = this.fit(recording);
 
     context.fillStyle = '#181a1e';
     context.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -269,6 +369,10 @@ export class ReplayScreen {
     if (recording.scenario.kerb) this.drawKerb(recording.scenario.kerb);
     if (recording.scenario.bay) this.drawBay(recording.scenario.bay);
     for (const obstacle of recording.scenario.obstacles) this.drawObstacle(obstacle);
+
+    // Under the traces: guidance is a backdrop to the player's own path, never a
+    // line drawn on top of it.
+    if (this.referenceOn) this.drawReference();
 
     const upTo = Math.floor(this.index) + 1;
     for (const id of WHEEL_IDS) {
@@ -325,7 +429,7 @@ export class ReplayScreen {
   }
 
   private toScreen(p: Vec2): Vec2 {
-    return { x: this.view.originX + p.x * this.view.scale, y: this.view.originY - p.y * this.view.scale };
+    return { x: this.transform.originX + p.x * this.transform.scale, y: this.transform.originY - p.y * this.transform.scale };
   }
 
   private drawKerb(kerb: Kerb): void {
@@ -382,6 +486,19 @@ export class ReplayScreen {
     context.stroke();
   }
 
+  /**
+   * The clean path, dashed so it reads as a reference rather than as something
+   * that happened. It comes from the pure core (`referenceLine`), so it is the
+   * same shape whatever draws it.
+   */
+  private drawReference(): void {
+    if (this.reference.length < 2) return;
+    const context = this.context;
+    context.setLineDash([10, 8]);
+    this.drawTrace(this.reference, REFERENCE_COLOUR, 2.5);
+    context.setLineDash([]);
+  }
+
   private drawTrace(points: readonly Vec2[], colour: string, width: number): void {
     if (points.length < 2) return;
     const context = this.context;
@@ -404,7 +521,7 @@ export class ReplayScreen {
       if (Math.abs(frame.speed) < 0.05) continue;
       const heading = frame.pose.yaw + (frame.speed < 0 ? Math.PI : 0);
       const tip = this.toScreen(frame.centre);
-      const size = Math.max(5, this.view.scale * 0.22);
+      const size = Math.max(5, this.transform.scale * 0.22);
       for (const spread of [2.5, -2.5]) {
         const angle = heading + spread;
         context.beginPath();
@@ -419,7 +536,7 @@ export class ReplayScreen {
   private drawGearMarker(marker: GearChangeMarker): void {
     const context = this.context;
     const p = this.toScreen(marker.position);
-    const r = Math.max(4, this.view.scale * 0.12);
+    const r = Math.max(4, this.transform.scale * 0.12);
     context.strokeStyle = '#9be36f';
     context.lineWidth = 2;
     context.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
@@ -432,7 +549,7 @@ export class ReplayScreen {
   private drawContactMarker(marker: ContactMarker): void {
     const context = this.context;
     const p = this.toScreen(marker.position);
-    const r = Math.max(5, this.view.scale * 0.16);
+    const r = Math.max(5, this.transform.scale * 0.16);
     context.strokeStyle = SEVERITY_COLOUR[marker.severity];
     context.fillStyle = SEVERITY_COLOUR[marker.severity];
     context.lineWidth = 2;
@@ -498,7 +615,7 @@ export class ReplayScreen {
     const p = this.toScreen(nose);
     context.fillStyle = '#f4e58a';
     context.beginPath();
-    context.arc(p.x, p.y, Math.max(3, this.view.scale * 0.09), 0, Math.PI * 2);
+    context.arc(p.x, p.y, Math.max(3, this.transform.scale * 0.09), 0, Math.PI * 2);
     context.fill();
   }
 
@@ -524,7 +641,8 @@ export class ReplayScreen {
         : `${Math.round(Math.abs(frame.rack) * 100)}% ${frame.rack > 0 ? 'left' : 'right'}`;
     const direction = frame.speed > 0.05 ? 'forward' : frame.speed < -0.05 ? 'reversing' : 'stopped';
     this.readout.textContent =
-      `REPLAY  frame ${Math.round(this.index)} / ${last}   t ${frame.time.toFixed(2)} s   ${this.rate}x\n` +
+      `REPLAY (${this.viewMode === 'top-down' ? 'top-down' : "driver's seat"})  ` +
+      `frame ${Math.round(this.index)} / ${last}   t ${frame.time.toFixed(2)} s   ${this.rate}x\n` +
       `gear ${frame.gear}   rack ${frame.rack.toFixed(2)} (${lock})\n` +
       `speed ${Math.abs(frame.speed * 3.6).toFixed(1)} km/h ${direction}`;
   }

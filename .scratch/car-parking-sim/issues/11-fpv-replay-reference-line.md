@@ -6,9 +6,9 @@ An optional reference line — a clean path through the manoeuvre — can be ove
 
 **Blocked by:** 04, 10
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Replay can render the recorded frames through the first-person camera, including mirrors where available
-- [ ] Toggling between top-down and first-person preserves the current scrub position
-- [ ] Optional reference line overlays the top-down trace and can be turned off
-- [ ] Scrub, speed, frame-step and event-jump all work identically in both views
+- [x] Replay can render the recorded frames through the first-person camera, including mirrors where available
+- [x] Toggling between top-down and first-person preserves the current scrub position
+- [x] Optional reference line overlays the top-down trace and can be turned off
+- [x] Scrub, speed, frame-step and event-jump all work identically in both views

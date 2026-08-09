@@ -130,6 +130,9 @@ export {
   bodyTrace,
 } from './recording';
 
+export type { ReferencePose } from './reference';
+export { referencePath, referenceLine, parkedPose } from './reference';
+
 export type { StepResult } from './step';
 export { step, FIXED_DT, wrapAngle } from './step';
 
