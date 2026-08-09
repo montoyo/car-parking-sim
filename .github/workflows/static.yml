@@ -1,0 +1,19 @@
+name: Build & Publish on pages
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install and Build
+        run: |
+          npm ci
+          npm run build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
