@@ -48,7 +48,8 @@ function main(): void {
     }
     // Instant restart: back to the scenario's approach pose, same layout, same
     // tuning, so a botched approach costs nothing but the attempt.
-    if (e.code === 'KeyR' && !e.repeat) restart();
+    // Not KeyR — that is gear-reverse in the keyboard adapter's bindings.
+    if (e.code === 'Backspace' && !e.repeat) restart();
   });
 
   let previous: WorldState = createWorld('parallel-park');
