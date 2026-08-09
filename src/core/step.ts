@@ -14,7 +14,8 @@
 
 import type { ControlInput } from './input';
 import { clamp, sanitiseInput } from './input';
-import type { SimEvent } from './events';
+import type { ContactEvent, SimEvent } from './events';
+import { updateCompletion } from './completion';
 import { resolveBodyCollisions } from './collision';
 import { resolveKerbCollisions } from './kerb';
 import type { DynamicsState } from './dynamics';
@@ -123,26 +124,45 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
   });
   events.push(...kerb.events);
 
+  // --- Is the attempt over? -----------------------------------------------
+  // The player declares they are finished by parking properly — stationary with
+  // the handbrake set, or simply held stopped past the dwell time — so completion
+  // is read off the same state and the same contact stream as everything else.
+  const contactEvents = events.filter((e): e is ContactEvent => e.kind === 'contact');
+  const vehicle = {
+    pose,
+    longitudinalVelocity: collision.longitudinalVelocity,
+    lateralVelocity: collision.lateralVelocity,
+    yawRate: collision.yawRate,
+    longitudinalAcceleration: motion.longitudinalAcceleration,
+    lateralAcceleration: motion.lateralAcceleration,
+    pitch: motion.pitch,
+    roll: motion.roll,
+    kinematicBlend: motion.kinematicBlend,
+    rack,
+    gear: input.gear,
+    wheels: wheelStatesFor(pose, rack, motion.wheels),
+  };
+  const completion = updateCompletion(
+    world.completion,
+    vehicle,
+    world.scenario,
+    contactEvents,
+    input.handbrake,
+    tick,
+    time,
+    dt,
+  );
+  events.push(...completion.events);
+
   return {
     world: {
       ...world,
       tick,
       time,
       contacts: kerb.contacts,
-      vehicle: {
-        pose,
-        longitudinalVelocity: collision.longitudinalVelocity,
-        lateralVelocity: collision.lateralVelocity,
-        yawRate: collision.yawRate,
-        longitudinalAcceleration: motion.longitudinalAcceleration,
-        lateralAcceleration: motion.lateralAcceleration,
-        pitch: motion.pitch,
-        roll: motion.roll,
-        kinematicBlend: motion.kinematicBlend,
-        rack,
-        gear: input.gear,
-        wheels: wheelStatesFor(pose, rack, motion.wheels),
-      },
+      completion: completion.completion,
+      vehicle,
     },
     events,
   };

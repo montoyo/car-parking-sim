@@ -24,6 +24,15 @@ interface SimEventBase {
 
 export interface ContactEvent extends SimEventBase {
   readonly kind: 'contact';
+  /**
+   * Identity of the contact this event belongs to — the coalescing key of the
+   * `ContactRecord` behind it (`body:<obstacle id>`, `kerb:<wheel>`, ...). A
+   * sustained scrape reports once, but it reports AGAIN if it gets strictly
+   * worse, and both reports carry the same key. That is what lets scoring
+   * penalise one scrape once and the replay draw one marker for it, from the
+   * event log alone.
+   */
+  readonly key: string;
   readonly surface: ContactSurface;
   readonly part: ContactPart;
   readonly severity: Severity;

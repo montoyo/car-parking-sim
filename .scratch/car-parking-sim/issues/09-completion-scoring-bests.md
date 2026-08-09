@@ -10,18 +10,18 @@ Best scores persist in browser local storage keyed by scenario id *and* its tuna
 
 **Blocked by:** 06, 08
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Completion is detected by the car being stationary with the handbrake set, or held stopped past a dwell time
-- [ ] Scoring is a pure function over the finished world and event log
-- [ ] Every criterion listed above contributes a normalised sub-score against a tolerance from scenario data
-- [ ] Fully-inside-bay is a hard pass gate, independent of the weighted total
-- [ ] Breakdown screen shows per-criterion results plus a letter grade or star rating
-- [ ] Best score per scenario and parameter set persists in local storage, with a "new best" cue
-- [ ] Test: a perfectly centred, perfectly aligned park scores maximum on centring and alignment
-- [ ] Test: offsetting the car by a known distance degrades the centring sub-score monotonically
-- [ ] Test: a car left half outside the bay fails regardless of every other criterion
-- [ ] Test: each contact event reduces the total by its severity's weight
-- [ ] Test: shunt count matches the number of `gearChange` events
-- [ ] Test: the breakdown's parts sum to the total
-- [ ] Test: a scripted known-good manoeuvre completes the parallel park scenario with zero contacts
+- [x] Completion is detected by the car being stationary with the handbrake set, or held stopped past a dwell time
+- [x] Scoring is a pure function over the finished world and event log
+- [x] Every criterion listed above contributes a normalised sub-score against a tolerance from scenario data
+- [x] Fully-inside-bay is a hard pass gate, independent of the weighted total
+- [x] Breakdown screen shows per-criterion results plus a letter grade or star rating
+- [x] Best score per scenario and parameter set persists in local storage, with a "new best" cue
+- [x] Test: a perfectly centred, perfectly aligned park scores maximum on centring and alignment
+- [x] Test: offsetting the car by a known distance degrades the centring sub-score monotonically
+- [x] Test: a car left half outside the bay fails regardless of every other criterion
+- [x] Test: each contact event reduces the total by its severity's weight
+- [x] Test: shunt count matches the number of `gearChange` events
+- [x] Test: the breakdown's parts sum to the total
+- [x] Test: a scripted known-good manoeuvre completes the parallel park scenario with zero contacts

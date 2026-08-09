@@ -73,6 +73,7 @@ export {
   coalesceContacts,
   surfaceOf,
   bodyPolygon,
+  bodyCentre,
   obstaclePolygon,
   collidesWithBody,
   polygonOverlap,
@@ -82,6 +83,32 @@ export {
 
 export type { KerbCollisionInput, KerbCollisionOutcome, KerbStrip } from './kerb';
 export { kerbStrips, catchesBodywork, wheelFootprint, resolveKerbCollisions } from './kerb';
+
+export type { CompletionState, AttemptStatus } from './completion';
+export {
+  INITIAL_COMPLETION,
+  STATIONARY_SPEED,
+  STATIONARY_YAW_RATE,
+  COMPLETION_DWELL_SECONDS,
+  UNDER_WAY_SPEED,
+  isStationary,
+  updateCompletion,
+} from './completion';
+
+export type { Scorecard, CriterionScore, ScoredContact, Gates, Grade } from './scoring';
+export {
+  CONTACT_SEVERITY_WEIGHT,
+  CRITERION_DIRECTION,
+  scoreAttempt,
+  scoredContacts,
+  shuntCount,
+  subScoreFor,
+  gradeFor,
+  bayOffsets,
+  alignmentDegrees,
+  kerbDistance,
+  fullyInsideBay,
+} from './scoring';
 
 export type { StepResult } from './step';
 export { step, FIXED_DT, wrapAngle } from './step';

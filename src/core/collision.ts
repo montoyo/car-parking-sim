@@ -25,7 +25,7 @@
 import type { ContactEvent, ContactSurface, Severity } from './events';
 import type { Obstacle, Scenario } from './scenario';
 import type { VehicleDefinition, Vec2, WheelId } from './vehicle';
-import { VEHICLE, bodyOutline } from './vehicle';
+import { VEHICLE, bodyOutline, frontAxleX, rearAxleX } from './vehicle';
 import type { BodyPose } from './world';
 
 /**
@@ -112,6 +112,20 @@ export function bodyPolygon(pose: BodyPose, v: VehicleDefinition = VEHICLE): rea
     x: pose.x + p.x * cos - p.y * sin,
     y: pose.y + p.x * sin + p.y * cos,
   }));
+}
+
+/**
+ * The geometric centre of the bodywork in world coordinates. NOT the pose
+ * origin, which sits midway along the WHEELBASE — the overhangs differ, so the
+ * two are a few centimetres apart, and it is the metal a player looks at when
+ * they judge whether the car is centred in a bay.
+ */
+export function bodyCentre(pose: BodyPose, v: VehicleDefinition = VEHICLE): Vec2 {
+  const localX = (frontAxleX(v) + v.frontOverhang + (rearAxleX(v) - v.rearOverhang)) / 2;
+  return {
+    x: pose.x + localX * Math.cos(pose.yaw),
+    y: pose.y + localX * Math.sin(pose.yaw),
+  };
 }
 
 /** An obstacle's box in world coordinates, counter-clockwise. */
@@ -308,6 +322,7 @@ function eventFor(
   return {
     kind: 'contact',
     tick,
+    key: hit.record.key,
     surface: hit.record.surface,
     part: hit.record.part,
     severity,

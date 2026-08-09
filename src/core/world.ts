@@ -5,6 +5,8 @@
  */
 
 import type { ContactRecord } from './collision';
+import type { CompletionState } from './completion';
+import { INITIAL_COMPLETION } from './completion';
 import type { Gear } from './input';
 import type { Scenario, ScenarioId } from './scenario';
 import { resolveScenario } from './scenario';
@@ -107,6 +109,11 @@ export interface WorldState {
    * and these records are what makes the second tick of it not a second event.
    */
   readonly contacts: readonly ContactRecord[];
+  /**
+   * Progress of the attempt: whether it is still being driven, and if not, when
+   * and why it ended. State because the "held stopped" dwell timer is.
+   */
+  readonly completion: CompletionState;
 }
 
 export interface CreateWorldOptions {
@@ -183,6 +190,7 @@ export function createWorld(scenarioId: ScenarioId, options: CreateWorldOptions 
     time: 0,
     seed: options.seed ?? 0,
     contacts: [],
+    completion: INITIAL_COMPLETION,
     vehicle: {
       pose,
       longitudinalVelocity: 0,

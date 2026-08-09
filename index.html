@@ -77,6 +77,69 @@
         justify-content: center;
         pointer-events: none;
       }
+      /* Breakdown screen: shown when the attempt ends. */
+      #scorecard {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 16px 20px;
+        background: rgba(8, 10, 12, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 6px;
+        min-width: 620px;
+      }
+      .card-head {
+        display: flex;
+        gap: 16px;
+        align-items: baseline;
+        margin-bottom: 8px;
+      }
+      .card-grade {
+        font-size: 34px;
+        font-weight: 700;
+      }
+      .card-points {
+        font-size: 20px;
+      }
+      .card-stars {
+        letter-spacing: 3px;
+        opacity: 0.9;
+      }
+      .card-verdict {
+        margin-left: auto;
+        letter-spacing: 0.12em;
+      }
+      .card-gates {
+        opacity: 0.85;
+        margin-bottom: 10px;
+      }
+      .card-rows {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      .card-rows td {
+        padding: 2px 8px 2px 0;
+        white-space: nowrap;
+      }
+      .card-band,
+      .card-weight {
+        opacity: 0.6;
+      }
+      .card-bar {
+        font-family: inherit;
+        letter-spacing: 1px;
+      }
+      .card-sub {
+        text-align: right;
+      }
+      .card-best {
+        margin-top: 10px;
+      }
+      .card-hint {
+        margin-top: 4px;
+        opacity: 0.6;
+      }
       .contact-banner {
         padding: 7px 14px;
         border: 1px solid currentColor;
@@ -93,6 +156,7 @@
     <canvas id="viewport"></canvas>
     <div id="hud"></div>
     <div id="cue"></div>
+    <div id="scorecard"></div>
     <div id="controls">W/S throttle &amp; brake   A/D steer   F/N/R gear   Space handbrake
 mouse look (click to capture)   Q/E look left/right   C look back   Z recentre   V top-down
 M select mirror   I/J/K/L aim it   O reset aim   Backspace restart scenario</div>

@@ -12,8 +12,15 @@
  *   expect(r.world.vehicle.pose.x).toBeLessThan(-0.5);
  */
 
-import type { ControlInput, SimEvent, Vec2, WheelId, WorldState } from '../../src/core/index';
-import { FIXED_DT, NEUTRAL_INPUT, step } from '../../src/core/index';
+import type {
+  ControlInput,
+  Scorecard,
+  SimEvent,
+  Vec2,
+  WheelId,
+  WorldState,
+} from '../../src/core/index';
+import { FIXED_DT, NEUTRAL_INPUT, scoreAttempt, step } from '../../src/core/index';
 
 /** A held input, applied for a duration. Unspecified channels are neutral. */
 export interface DriveSegment {
@@ -70,6 +77,15 @@ export function hold(
   options: DriveOptions = {},
 ): DriveResult {
   return drive(initial, [{ seconds, input: held }], options);
+}
+
+/**
+ * Score a driven attempt. Scoring is the third member of the core's public
+ * surface, and this is how tests reach it: over the world a run ended in and the
+ * event log that run produced — never a hand-built log.
+ */
+export function score(result: DriveResult): Scorecard {
+  return scoreAttempt(result.world, result.events);
 }
 
 /** Events of one kind, narrowed. */

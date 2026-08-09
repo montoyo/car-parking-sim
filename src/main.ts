@@ -7,14 +7,16 @@
  */
 
 import type { SimEvent, WorldState } from './core/index';
-import { FIXED_DT, createWorld, resetWorld, step } from './core/index';
+import { FIXED_DT, createWorld, resetWorld, scoreAttempt, step } from './core/index';
 import { KeyboardAdapter } from './input/keyboard';
 import { LookController } from './input/look';
 import { MirrorAimController } from './input/mirror-aim';
 import { Renderer } from './render/renderer';
 import { interpolateVehicle } from './render/interpolate';
+import { BestScores } from './ui/bests';
 import { ContactCue } from './ui/contact-cue';
 import { Hud } from './ui/hud';
+import { ScorecardScreen } from './ui/scorecard';
 
 const MAX_CATCHUP_SECONDS = 0.25;
 /**
@@ -27,8 +29,9 @@ function main(): void {
   const canvas = document.getElementById('viewport');
   const hudRoot = document.getElementById('hud');
   const cueRoot = document.getElementById('cue');
-  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot || !cueRoot) {
-    throw new Error('Expected #viewport canvas, #hud and #cue elements in the document.');
+  const cardRoot = document.getElementById('scorecard');
+  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot || !cueRoot || !cardRoot) {
+    throw new Error('Expected #viewport, #hud, #cue and #scorecard elements in the document.');
   }
 
   const renderer = new Renderer(canvas);
@@ -36,6 +39,10 @@ function main(): void {
   // The contact cue reads the same event stream scoring and replay will: hitting
   // something is announced in the moment, not just tallied afterwards.
   const cue = new ContactCue(cueRoot);
+  // The breakdown screen and the persisted bests: both fed by the pure scoring
+  // function over the world the attempt ended in and the log it produced.
+  const scorecard = new ScorecardScreen(cardRoot);
+  const bests = new BestScores();
   const keyboard = new KeyboardAdapter();
   keyboard.attach(window);
   // The head is a device adapter like any other: mouse look plus one-button
@@ -59,6 +66,8 @@ function main(): void {
 
   let previous: WorldState = createWorld('parallel-park');
   let current: WorldState = previous;
+  /** The whole attempt's event log — what scoring and (ticket 10) replay consume. */
+  let log: SimEvent[] = [];
   let accumulator = 0;
   let lastFrameMs: number | null = null;
   let paused = false;
@@ -81,6 +90,18 @@ function main(): void {
     current = resetWorld(current);
     previous = current;
     accumulator = 0;
+    log = [];
+    scorecard.hide();
+  };
+
+  /**
+   * The attempt is over: score it, remember it if it is a best, and show the
+   * breakdown. The core has already latched `completion`, so the loop below simply
+   * stops stepping.
+   */
+  const finish = (): void => {
+    const card = scoreAttempt(current, log);
+    scorecard.show(card, bests.submit(card));
   };
 
   const frame = (nowMs: number): void => {
@@ -91,14 +112,18 @@ function main(): void {
 
     if (!paused) {
       accumulator = Math.min(accumulator + elapsed, MAX_CATCHUP_SECONDS);
-      while (accumulator >= FIXED_DT) {
+      // A finished attempt is frozen: the player is reading their score, not
+      // driving. Backspace restarts.
+      while (accumulator >= FIXED_DT && current.completion.status === 'driving') {
         const input = keyboard.sample(FIXED_DT);
         const result = step(current, input, FIXED_DT);
         previous = current;
         current = result.world;
         accumulator -= FIXED_DT;
+        log.push(...result.events);
         report(result.events);
         cue.report(result.events);
+        if (current.completion.status !== 'driving') finish();
       }
     }
 
