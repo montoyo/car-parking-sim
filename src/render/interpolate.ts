@@ -27,12 +27,16 @@ export function interpolateVehicle(
     const p = previous.wheels[id];
     const c = current.wheels[id];
     wheels[id] = {
+      // Interpolate what is drawn; carry the rest straight through, since the
+      // renderer only ever reads it for debug overlays.
+      ...c,
       position: { x: lerp(p.position.x, c.position.x, t), y: lerp(p.position.y, c.position.y, t) },
       steerAngle: lerp(p.steerAngle, c.steerAngle, t),
       spin: lerp(p.spin, c.spin, t),
     };
   }
   return {
+    ...current,
     pose: {
       x: lerp(previous.pose.x, current.pose.x, t),
       y: lerp(previous.pose.y, current.pose.y, t),
@@ -42,6 +46,10 @@ export function interpolateVehicle(
     lateralVelocity: lerp(previous.lateralVelocity, current.lateralVelocity, t),
     yawRate: lerp(previous.yawRate, current.yawRate, t),
     rack: lerp(previous.rack, current.rack, t),
+    // Cosmetic attitude is smoothed already, but interpolating it keeps the
+    // camera from stepping at low frame rates.
+    pitch: lerp(previous.pitch, current.pitch, t),
+    roll: lerp(previous.roll, current.roll, t),
     gear: current.gear,
     wheels,
   };

@@ -97,6 +97,28 @@ export function wheelPath(history: readonly WorldState[], id: WheelId): readonly
   return history.map((w) => w.vehicle.wheels[id].position);
 }
 
+/**
+ * Read one quantity out of every tick of a driven history — the way to ask a
+ * question about the SHAPE of a manoeuvre rather than about its end state.
+ */
+export function track<T>(history: readonly WorldState[], pick: (world: WorldState) => T): T[] {
+  return history.map(pick);
+}
+
+/**
+ * The largest change between consecutive samples. This is how smoothness gets
+ * measured here: jitter, a discontinuity at a model's blend threshold, and a
+ * numerical instability all show up as one outsized step.
+ */
+export function largestStep(values: readonly number[]): number {
+  let largest = 0;
+  for (let i = 1; i < values.length; i++) {
+    const step = Math.abs((values[i] as number) - (values[i - 1] as number));
+    if (step > largest) largest = step;
+  }
+  return largest;
+}
+
 export interface FittedCircle {
   readonly centre: Vec2;
   readonly radius: number;

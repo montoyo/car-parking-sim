@@ -21,15 +21,24 @@ describe('determinism', () => {
   });
 });
 
+/**
+ * Ticket 01's placeholder was kinematic, so any timestep gave the same path to
+ * the last bit. The force-based model of ticket 03 CONVERGES instead of matching
+ * exactly, so these assertions are stated over a parking manoeuvre — the regime
+ * the game is played in — and they check convergence as well as closeness.
+ */
 describe('frame-rate independence', () => {
   it('halving dt while doubling tick count leaves the final pose within tolerance', () => {
+    // A shunt: creep forward on full lock, stop, reverse out on opposite lock.
     const script = [
-      { seconds: 2, input: { gear: 'forward' as const, throttle: 0.5, steer: 1 } },
-      { seconds: 2, input: { gear: 'forward' as const, throttle: 0.5, steer: -1 } },
+      { seconds: 2, input: { gear: 'forward' as const, steer: 1 } },
+      { seconds: 0.5, input: { gear: 'forward' as const, brake: 1 } },
+      { seconds: 2, input: { gear: 'reverse' as const, steer: -1 } },
     ];
 
     const coarse = drive(createWorld('debug-plane'), script, { dt: FIXED_DT });
     const fine = drive(createWorld('debug-plane'), script, { dt: FIXED_DT / 2 });
+    const finer = drive(createWorld('debug-plane'), script, { dt: FIXED_DT / 4 });
 
     expect(fine.history.length).toBe(coarse.history.length * 2);
     // Tolerances in physical units: 5 cm of position, 0.5 deg of heading, over
@@ -38,6 +47,12 @@ describe('frame-rate independence', () => {
     expect(
       Math.abs(degrees(coarse.world.vehicle.pose.yaw - fine.world.vehicle.pose.yaw)),
     ).toBeLessThan(0.5);
+
+    // Converging, not merely close: halving the timestep again moves the answer
+    // less than the first halving did.
+    expect(poseDistance(fine.world.vehicle.pose, finer.world.vehicle.pose)).toBeLessThan(
+      poseDistance(coarse.world.vehicle.pose, fine.world.vehicle.pose),
+    );
   });
 });
 

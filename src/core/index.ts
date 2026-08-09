@@ -26,6 +26,7 @@ export type {
   VehicleState,
   BodyPose,
   WheelState,
+  WheelMotion,
   ScenarioId,
   CreateWorldOptions,
 } from './world';
@@ -37,12 +38,17 @@ export { step, FIXED_DT, wrapAngle } from './step';
 export type {
   VehicleDefinition,
   MirrorDefinition,
+  TyreDefinition,
+  DrivetrainDefinition,
+  BrakeDefinition,
+  ChassisAttitudeDefinition,
   WheelId,
   Vec2,
   Vec3,
 } from './vehicle';
 export {
   VEHICLE,
+  GRAVITY,
   WHEEL_IDS,
   vehicleLength,
   bodyOutline,
@@ -54,3 +60,17 @@ export {
   turnRadius,
   rackRate,
 } from './vehicle';
+
+export type { TyreForce } from './tyre';
+export { tyreForce, tyreCurve, wheelLoads } from './tyre';
+
+export {
+  gearDirection,
+  gearRatio,
+  engineTorqueCurve,
+  rearWheelDriveTorque,
+  brakeTorques,
+} from './drivetrain';
+
+export type { DynamicsSolution } from './dynamics';
+export { kinematicWeight } from './dynamics';

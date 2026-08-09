@@ -70,12 +70,20 @@ describe('Ackermann front wheel angles', () => {
   });
 });
 
+/**
+ * These arcs are driven at IDLE CREEP rather than on part throttle. Ticket 02
+ * wrote them against a purely kinematic placeholder, where speed was irrelevant;
+ * with the real tyre model of ticket 03 the geometric turning circle is a
+ * LOW-SPEED claim, exactly as user story 14 states it — wind on full lock at
+ * 30 km/h and a real car understeers wide of the Ackermann radius, and so does
+ * this one. Creep speed is also the speed every parking manoeuvre happens at.
+ */
 describe('turning circle', () => {
   it('at full lock matches the Ackermann prediction for the wheelbase and track', () => {
-    // Wind to full lock first, then drive a long arc so the fit is over steady
+    // Wind to full lock first, then creep a long arc so the fit is over steady
     // full-lock geometry only.
-    const wound = hold(createWorld('debug-plane'), 5, { gear: 'forward', throttle: 0.3, steer: 1 });
-    const arc = hold(wound.world, 12, { gear: 'forward', throttle: 0.3, steer: 1 });
+    const wound = hold(createWorld('debug-plane'), 5, { gear: 'forward', steer: 1 });
+    const arc = hold(wound.world, 12, { gear: 'forward', steer: 1 });
 
     const centre = arc.history.map((w) => {
       const l = w.vehicle.wheels.rearLeft.position;
@@ -91,8 +99,8 @@ describe('turning circle', () => {
   });
 
   it('has the rear wheels tracking inside the front wheels through a turn', () => {
-    const wound = hold(createWorld('debug-plane'), 5, { gear: 'forward', throttle: 0.3, steer: 1 });
-    const arc = hold(wound.world, 12, { gear: 'forward', throttle: 0.3, steer: 1 });
+    const wound = hold(createWorld('debug-plane'), 5, { gear: 'forward', steer: 1 });
+    const arc = hold(wound.world, 12, { gear: 'forward', steer: 1 });
 
     const frontInner = fitCircle(wheelPath(arc.history, 'frontLeft'));
     const rearInner = fitCircle(wheelPath(arc.history, 'rearLeft'));

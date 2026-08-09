@@ -10,18 +10,18 @@ Drivetrain is rear-wheel drive: torque curve → fixed final drive → open diff
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Slip-based tyre model with per-wheel normal load, weight transfer, and a friction-circle clamp
-- [ ] RWD drivetrain with torque curve, final drive, open differential, separate reverse ratio, and idle creep
-- [ ] Brakes with front bias; handbrake locks the rear wheels only
-- [ ] Continuous blend to a kinematic rear-axle-pivot solution below the crawl threshold
-- [ ] Pitch and roll derived for the camera without being simulated as degrees of freedom
-- [ ] Test: crawl-speed manoeuvres produce smooth, non-oscillating poses with no jitter
-- [ ] Test: yaw rate has no discontinuity as the car accelerates through the blend threshold
-- [ ] Test: idle creep moves the car with no throttle once the brake is released
-- [ ] Test: the handbrake holds the car stationary
-- [ ] Test: excessive throttle in a turn produces measurable rear slip
-- [ ] Test: the friction-circle clamp prevents simultaneous full drive and full cornering force
-- [ ] Test: steering in reverse yaws the car the opposite way relative to travel
-- [ ] Test: determinism and `dt`-independence from 01 still hold with the full model
+- [x] Slip-based tyre model with per-wheel normal load, weight transfer, and a friction-circle clamp
+- [x] RWD drivetrain with torque curve, final drive, open differential, separate reverse ratio, and idle creep
+- [x] Brakes with front bias; handbrake locks the rear wheels only
+- [x] Continuous blend to a kinematic rear-axle-pivot solution below the crawl threshold
+- [x] Pitch and roll derived for the camera without being simulated as degrees of freedom
+- [x] Test: crawl-speed manoeuvres produce smooth, non-oscillating poses with no jitter
+- [x] Test: yaw rate has no discontinuity as the car accelerates through the blend threshold
+- [x] Test: idle creep moves the car with no throttle once the brake is released
+- [x] Test: the handbrake holds the car stationary
+- [x] Test: excessive throttle in a turn produces measurable rear slip
+- [x] Test: the friction-circle clamp prevents simultaneous full drive and full cornering force
+- [x] Test: steering in reverse yaws the car the opposite way relative to travel
+- [x] Test: determinism and `dt`-independence from 01 still hold with the full model

@@ -45,6 +45,82 @@ export interface MirrorDefinition {
   readonly convexRadius: number | null;
 }
 
+/**
+ * Simplified Pacejka-style tyre. One curve serves both slip ratio and slip
+ * angle: the two slips are normalised by their peak values into a single
+ * combined-slip magnitude, the curve is evaluated once, and the resulting force
+ * is split back along the slip direction. That IS the friction circle — a wheel
+ * cannot deliver full cornering and full drive at once because both draw on the
+ * same `peakFrictionCoefficient * load`.
+ */
+export interface TyreDefinition {
+  /** Peak friction coefficient (dry tarmac). */
+  readonly peakFrictionCoefficient: number;
+  /** Slip ratio at which longitudinal force peaks. */
+  readonly peakSlipRatio: number;
+  /** Slip angle (rad) at which lateral force peaks. */
+  readonly peakSlipAngle: number;
+  /** Magic-formula shape factor; > 1 gives a peak followed by a mild falloff. */
+  readonly curveShape: number;
+  /** Rotational inertia of one wheel + hub + brake disc (kg m^2). */
+  readonly rotationalInertia: number;
+  /** Rolling resistance coefficient (fraction of vertical load). */
+  readonly rollingResistance: number;
+  /**
+   * Floor (m/s) on the reference speed used to normalise slip. Without it slip
+   * ratio and slip angle are singular at a standstill — which is exactly the
+   * numerical cliff the low-speed kinematic blend exists to avoid.
+   */
+  readonly slipReferenceSpeed: number;
+}
+
+/**
+ * Rear-wheel drive: torque curve -> fixed final drive -> open differential ->
+ * rear wheels only. `ratioForward` / `ratioReverse` are the COMBINED gear and
+ * final-drive ratios (the car is an automatic with one forward ratio); reverse
+ * is geared lower, i.e. numerically higher, so it is torquier and slower.
+ */
+export interface DrivetrainDefinition {
+  readonly peakTorque: number;
+  /** Engine speed (rad/s) at which `peakTorque` is produced. */
+  readonly peakTorqueSpeed: number;
+  readonly idleSpeed: number;
+  readonly maxSpeed: number;
+  /** Engine torque fed through the converter at idle — this is the creep. */
+  readonly idleTorque: number;
+  /**
+   * Road speed (m/s) at which the torque converter has stopped multiplying and
+   * idle creep has faded to nothing. Sets the speed a car in gear creeps to.
+   */
+  readonly creepFadeSpeed: number;
+  readonly ratioForward: number;
+  readonly ratioReverse: number;
+  readonly efficiency: number;
+}
+
+export interface BrakeDefinition {
+  /** Total brake torque at full pedal, summed over all four wheels (Nm). */
+  readonly maxTorque: number;
+  /** Fraction of `maxTorque` going to the front axle. */
+  readonly frontBias: number;
+  /** Handbrake torque per REAR wheel (Nm). The handbrake locks the rears only. */
+  readonly handbrakeTorque: number;
+}
+
+/**
+ * Pitch and roll are NOT degrees of freedom — they are derived from the body's
+ * longitudinal / lateral acceleration purely so the camera and body mesh lean
+ * convincingly. These gains and the lag are that derivation's only tuning.
+ */
+export interface ChassisAttitudeDefinition {
+  /** Radians of nose-up pitch per m/s^2 of forward acceleration. */
+  readonly pitchPerLongitudinalAccel: number;
+  /** Radians of roll per m/s^2 of lateral acceleration. */
+  readonly rollPerLateralAccel: number;
+  /** First-order lag (s) so attitude does not snap with the force. */
+  readonly responseTime: number;
+}
+
 export interface VehicleDefinition {
   readonly name: string;
 
@@ -95,6 +171,20 @@ export interface VehicleDefinition {
    */
   readonly rackRollingSpeed: number;
 
+  readonly tyre: TyreDefinition;
+  readonly drivetrain: DrivetrainDefinition;
+  readonly brakes: BrakeDefinition;
+  readonly attitude: ChassisAttitudeDefinition;
+
+  /**
+   * Body speed (m/s) at or above which the vehicle is solved purely from tyre
+   * forces. Below it the solution blends continuously toward the kinematic
+   * rear-axle-pivot bicycle, because a force-based model degenerates into
+   * jitter and slip-angle singularities at crawl speed — and crawl speed is the
+   * entire game.
+   */
+  readonly kinematicBlendSpeed: number;
+
   /** Driver's eye point in vehicle local coordinates (left-hand drive: +y). */
   readonly driverEyePoint: Vec3;
 
@@ -133,6 +223,43 @@ export const VEHICLE: VehicleDefinition = {
   rackLockToLockSecondsStationary: 4.6,
   rackRollingSpeed: 0.6,
 
+  tyre: {
+    peakFrictionCoefficient: 1.0,
+    peakSlipRatio: 0.12,
+    peakSlipAngle: 0.14,
+    curveShape: 1.5,
+    rotationalInertia: 1.1,
+    rollingResistance: 0.014,
+    slipReferenceSpeed: 0.6,
+  },
+
+  drivetrain: {
+    peakTorque: 200,
+    peakTorqueSpeed: 300,
+    idleSpeed: 80,
+    maxSpeed: 600,
+    idleTorque: 45,
+    creepFadeSpeed: 1.6,
+    // Combined single-speed automatic + final drive. Reverse is geared lower.
+    ratioForward: 12.5,
+    ratioReverse: 14.5,
+    efficiency: 0.92,
+  },
+
+  brakes: {
+    maxTorque: 4800,
+    frontBias: 0.62,
+    handbrakeTorque: 1800,
+  },
+
+  attitude: {
+    pitchPerLongitudinalAccel: 0.006,
+    rollPerLateralAccel: 0.008,
+    responseTime: 0.18,
+  },
+
+  kinematicBlendSpeed: 3.0,
+
   driverEyePoint: { x: 0.35, y: 0.37, z: 1.18 },
 
   mirrors: {
@@ -159,6 +286,9 @@ export const VEHICLE: VehicleDefinition = {
     },
   },
 };
+
+/** Gravitational acceleration (m/s^2). The one place it is written down. */
+export const GRAVITY = 9.81;
 
 /** Overall bumper-to-bumper length (m), derived — never stored twice. */
 export function vehicleLength(v: VehicleDefinition = VEHICLE): number {
