@@ -19,6 +19,7 @@ export interface HudFrameInfo {
 }
 
 export class Hud {
+  private readonly scenario: HTMLElement;
   private readonly readout: HTMLElement;
   private readonly needle: HTMLElement;
   private readonly lockLabel: HTMLElement;
@@ -26,11 +27,13 @@ export class Hud {
 
   constructor(root: HTMLElement) {
     root.innerHTML =
+      '<div class="hud-scenario"></div>' +
       '<div class="hud-readout"></div>' +
       '<div class="hud-rack"><div class="hud-rack-centre"></div>' +
       '<div class="hud-rack-needle"></div></div>' +
       '<div class="hud-lock"></div>' +
       '<div class="hud-mirror"></div>';
+    this.scenario = requireChild(root, '.hud-scenario');
     this.readout = requireChild(root, '.hud-readout');
     this.needle = requireChild(root, '.hud-rack-needle');
     this.lockLabel = requireChild(root, '.hud-lock');
@@ -39,6 +42,14 @@ export class Hud {
 
   update(world: WorldState, frame?: HudFrameInfo): void {
     const v = world.vehicle;
+
+    // Name, difficulty and what the attempt is judged on — stated up front, and
+    // still on screen mid-manoeuvre because it is what the player is aiming at.
+    const scenario = world.scenario;
+    this.scenario.textContent =
+      `${scenario.name}   [${scenario.difficulty}]   to pass: ${scenario.passSummary}` +
+      '   [R restart]';
+
     const kph = Math.abs(v.longitudinalVelocity) * 3.6;
     const gearLabel = v.gear === 'forward' ? 'D' : v.gear === 'reverse' ? 'R' : 'N';
     const fps = frame && frame.fps > 0 ? `   ${Math.round(frame.fps)} fps` : '';

@@ -27,10 +27,41 @@ export type {
   BodyPose,
   WheelState,
   WheelMotion,
-  ScenarioId,
   CreateWorldOptions,
 } from './world';
-export { createWorld } from './world';
+export { createWorld, resetWorld } from './world';
+
+export type {
+  Scenario,
+  ScenarioId,
+  ScenarioTemplate,
+  ScenarioPose,
+  Bay,
+  BayType,
+  Kerb,
+  KerbSide,
+  Obstacle,
+  ObstacleKind,
+  ObstacleSpec,
+  BaySpec,
+  KerbSpec,
+  CriterionId,
+  CriterionSpec,
+  PassCriteriaSpec,
+  ParameterSpec,
+  Difficulty,
+  Length,
+  Measure,
+} from './scenario';
+export {
+  SCENARIO_IDS,
+  SCENARIO_TEMPLATES,
+  PARALLEL_PARK_PARAMETERS,
+  scenarioTemplate,
+  defaultParameters,
+  resolveParameters,
+  resolveScenario,
+} from './scenario';
 
 export type { StepResult } from './step';
 export { step, FIXED_DT, wrapAngle } from './step';

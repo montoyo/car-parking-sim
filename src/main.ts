@@ -7,7 +7,7 @@
  */
 
 import type { SimEvent, WorldState } from './core/index';
-import { FIXED_DT, createWorld, step } from './core/index';
+import { FIXED_DT, createWorld, resetWorld, step } from './core/index';
 import { KeyboardAdapter } from './input/keyboard';
 import { LookController } from './input/look';
 import { MirrorAimController } from './input/mirror-aim';
@@ -46,9 +46,12 @@ function main(): void {
     if (e.code === 'KeyV') {
       renderer.setViewMode(renderer.mode === 'first-person' ? 'top-down' : 'first-person');
     }
+    // Instant restart: back to the scenario's approach pose, same layout, same
+    // tuning, so a botched approach costs nothing but the attempt.
+    if (e.code === 'KeyR' && !e.repeat) restart();
   });
 
-  let previous: WorldState = createWorld('debug-plane');
+  let previous: WorldState = createWorld('parallel-park');
   let current: WorldState = previous;
   let accumulator = 0;
   let lastFrameMs: number | null = null;
@@ -67,6 +70,12 @@ function main(): void {
     paused = document.hidden;
     lastFrameMs = null;
   });
+
+  const restart = (): void => {
+    current = resetWorld(current);
+    previous = current;
+    accumulator = 0;
+  };
 
   const frame = (nowMs: number): void => {
     requestAnimationFrame(frame);
@@ -97,6 +106,7 @@ function main(): void {
     // whole frame stuttering.
     const overBudget = smoothedFps > 0 && smoothedFps < FRAME_BUDGET_FPS;
     renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze, {
+      scenario: current.scenario,
       mirrorAim,
       overBudget,
     });

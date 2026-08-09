@@ -7,7 +7,7 @@
  * `VEHICLE`, never from numbers typed in here.
  */
 
-import type { VehicleState, WheelId } from '../core/index';
+import type { Bay, Kerb, Obstacle, ObstacleKind, Scenario, VehicleState, WheelId } from '../core/index';
 import { VEHICLE, WHEEL_IDS, bodyOutline, wheelPosition } from '../core/index';
 import type { Mat4 } from './mat4';
 import { multiply, orthographic, perspective, poseMatrix, rotationY, topDownView } from './mat4';
@@ -151,6 +151,12 @@ interface MirrorTarget {
 
 /** Presentation-only per-frame inputs the renderer needs beyond the world state. */
 export interface RenderOptions {
+  /**
+   * The scenario the attempt is in. Drawn by `drawScene`, so the parked cars,
+   * kerb and bay markings appear in the mirrors as well as in the windscreen —
+   * which is the whole point of judging the manoeuvre from the mirrors.
+   */
+  readonly scenario?: Scenario;
   /** Where the player has aimed each mirror. */
   readonly mirrorAim?: MirrorAimSet;
   /**
@@ -235,7 +241,9 @@ export class Renderer {
 
     // Mirror passes first: they render into their own targets, which the main
     // pass then samples when it draws the glass.
-    if (firstPerson) this.renderMirrors(vehicle, aim, options.overBudget === true);
+    if (firstPerson) {
+      this.renderMirrors(vehicle, aim, options.overBudget === true, options.scenario);
+    }
     this.frameIndex++;
 
     this.resize();
@@ -247,7 +255,10 @@ export class Renderer {
       ? this.firstPersonViewProjection(vehicle, look)
       : this.debugTopDownViewProjection(vehicle);
 
-    this.drawScene(vehicle, viewProjection, { noseMarker: !firstPerson });
+    this.drawScene(vehicle, viewProjection, {
+      noseMarker: !firstPerson,
+      scenario: options.scenario,
+    });
     if (firstPerson) {
       this.drawCockpit(vehicle);
       this.drawGlass(vehicle, aim, viewProjection);
@@ -263,7 +274,11 @@ export class Renderer {
   private drawScene(
     vehicle: VehicleState,
     viewProjection: Mat4,
-    options: { readonly noseMarker: boolean; readonly skipHousing?: MirrorId },
+    options: {
+      readonly noseMarker: boolean;
+      readonly skipHousing?: MirrorId | undefined;
+      readonly scenario?: Scenario | undefined;
+    },
   ): void {
     const gl = this.gl;
     gl.useProgram(this.ground.program);
@@ -274,6 +289,8 @@ export class Renderer {
     gl.useProgram(this.box.program);
     gl.uniformMatrix4fv(this.box.uViewProjection, false, viewProjection);
     gl.bindVertexArray(this.box.vao);
+
+    if (options.scenario) this.drawScenario(options.scenario);
 
     // Body: extents straight from the shared vehicle definition.
     const outline = bodyOutline(VEHICLE);
@@ -317,7 +334,136 @@ export class Renderer {
    * out through the greenhouse instead of at the inside of the bodywork, while the
    * wing mirrors, whose reflected eyes are outboard of the flank, still see it.
    */
-  private renderMirrors(vehicle: VehicleState, aim: MirrorAimSet, overBudget: boolean): void {
+  /**
+   * The scenario: kerb first (it is the ground the rest sits on), then the bay
+   * markings, then the obstacles. Drawn with the box program the caller has
+   * already bound, and from resolved scenario DATA only — no layout number is
+   * written down in the renderer.
+   */
+  private drawScenario(scenario: Scenario): void {
+    if (scenario.kerb) this.drawKerb(scenario.kerb);
+    if (scenario.bay) this.drawBayMarkings(scenario.bay);
+    for (const obstacle of scenario.obstacles) this.drawObstacle(obstacle);
+  }
+
+  /**
+   * The raised pavement behind the kerb line, one slab per polyline segment. The
+   * kerb face is the vertical side of the slab, which is exactly the surface a
+   * rim strikes — so what the player sees is the surface ticket 08 tests against.
+   */
+  private drawKerb(kerb: Kerb): void {
+    for (let i = 1; i < kerb.polyline.length; i++) {
+      const a = kerb.polyline[i - 1] as { x: number; y: number };
+      const b = kerb.polyline[i] as { x: number; y: number };
+      const yaw = Math.atan2(b.y - a.y, b.x - a.x);
+      // The pavement is on one declared side of the line; +y of the segment's own
+      // frame is its left, so the right-hand side is -y.
+      const sign = kerb.raisedSide === 'left' ? 1 : -1;
+      const offset = (sign * kerb.pavementWidth) / 2;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const cos = Math.cos(yaw);
+      const sin = Math.sin(yaw);
+      this.drawBox(
+        poseMatrix(mid.x - offset * sin, mid.y + offset * cos, kerb.height / 2, yaw),
+        { x: 0, y: 0, z: 0 },
+        { hx: Math.hypot(b.x - a.x, b.y - a.y) / 2, hy: kerb.pavementWidth / 2, hz: kerb.height / 2 },
+        [0.46, 0.46, 0.48],
+      );
+    }
+  }
+
+  /**
+   * The target bay: a painted outline, plus a solid block at each corner and a
+   * bar across the middle. The corner blocks and the bar are SHAPE cues, not just
+   * colour, so the target bay stays unambiguous without relying on hue.
+   */
+  private drawBayMarkings(bay: Bay): void {
+    const paint: readonly [number, number, number] = [0.93, 0.86, 0.36];
+    const corners = bay.polygon;
+    for (let i = 0; i < corners.length; i++) {
+      const a = corners[i] as { x: number; y: number };
+      const b = corners[(i + 1) % corners.length] as { x: number; y: number };
+      this.drawGroundLine(a, b, 0.06, paint);
+      this.drawBox(
+        poseMatrix(a.x, a.y, MARKING_HEIGHT, bay.axisYaw),
+        { x: 0, y: 0, z: 0 },
+        { hx: 0.16, hy: 0.16, hz: MARKING_HEIGHT },
+        [0.93, 0.94, 0.96],
+      );
+    }
+    // A bar across the bay's waist: where the middle of the car belongs.
+    const half = bay.width / 2 - 0.1;
+    const cos = Math.cos(bay.axisYaw);
+    const sin = Math.sin(bay.axisYaw);
+    this.drawGroundLine(
+      { x: bay.centre.x + half * sin, y: bay.centre.y - half * cos },
+      { x: bay.centre.x - half * sin, y: bay.centre.y + half * cos },
+      0.05,
+      paint,
+    );
+  }
+
+  /** A painted stripe on the ground between two world points. */
+  private drawGroundLine(
+    a: { readonly x: number; readonly y: number },
+    b: { readonly x: number; readonly y: number },
+    halfWidth: number,
+    colour: readonly [number, number, number],
+  ): void {
+    const yaw = Math.atan2(b.y - a.y, b.x - a.x);
+    this.drawBox(
+      poseMatrix((a.x + b.x) / 2, (a.y + b.y) / 2, MARKING_HEIGHT, yaw),
+      { x: 0, y: 0, z: 0 },
+      { hx: Math.hypot(b.x - a.x, b.y - a.y) / 2, hy: halfWidth, hz: MARKING_HEIGHT },
+      colour,
+    );
+  }
+
+  /**
+   * One obstacle. A parked car gets a second, darker box at wheel height so it
+   * reads as a car from the driver's seat and in the mirrors rather than as a
+   * slab — that lower edge is the reference a driver actually judges the gap by.
+   */
+  private drawObstacle(obstacle: Obstacle): void {
+    const frame = poseMatrix(obstacle.centre.x, obstacle.centre.y, 0, obstacle.yaw);
+    if (obstacle.kind === 'parked-car') {
+      const bottom = VEHICLE.sillHeight;
+      this.drawBox(
+        frame,
+        { x: 0, y: 0, z: (bottom + obstacle.height) / 2 },
+        {
+          hx: obstacle.halfLength,
+          hy: obstacle.halfWidth,
+          hz: (obstacle.height - bottom) / 2,
+        },
+        OBSTACLE_COLOURS['parked-car'],
+      );
+      this.drawBox(
+        frame,
+        { x: 0, y: 0, z: VEHICLE.wheelRadius },
+        {
+          hx: obstacle.halfLength - 0.55,
+          hy: obstacle.halfWidth - 0.09,
+          hz: VEHICLE.wheelRadius,
+        },
+        [0.11, 0.11, 0.12],
+      );
+      return;
+    }
+    this.drawBox(
+      frame,
+      { x: 0, y: 0, z: obstacle.height / 2 },
+      { hx: obstacle.halfLength, hy: obstacle.halfWidth, hz: obstacle.height / 2 },
+      OBSTACLE_COLOURS[obstacle.kind],
+    );
+  }
+
+  private renderMirrors(
+    vehicle: VehicleState,
+    aim: MirrorAimSet,
+    overBudget: boolean,
+    scenario?: Scenario | undefined,
+  ): void {
     const gl = this.gl;
     const due = mirrorsToUpdate(this.frameIndex, manoeuvreSide(vehicle), overBudget);
     if (due.length === 0) return;
@@ -332,6 +478,7 @@ export class Renderer {
       this.drawScene(vehicle, mirrorViewProjection(vehicle, id, aim[id]), {
         noseMarker: false,
         skipHousing: id,
+        scenario,
       });
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -564,6 +711,18 @@ export class Renderer {
     return { framebuffer, texture, width, height };
   }
 }
+
+/**
+ * Half-thickness of painted road markings. They are boxes rather than decals, so
+ * they need a sliver of height to beat the ground plane in the depth test.
+ */
+const MARKING_HEIGHT = 0.004;
+
+const OBSTACLE_COLOURS: Readonly<Record<ObstacleKind, readonly [number, number, number]>> = {
+  'parked-car': [0.3, 0.36, 0.46],
+  wall: [0.37, 0.37, 0.4],
+  bollard: [0.84, 0.56, 0.18],
+};
 
 /** Non-uniform scale, used to stretch the unit glass quad onto a mirror. */
 function scaling(x: number, y: number, z: number): Mat4 {

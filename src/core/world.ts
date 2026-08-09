@@ -5,6 +5,8 @@
  */
 
 import type { Gear } from './input';
+import type { Scenario, ScenarioId } from './scenario';
+import { resolveScenario } from './scenario';
 import type { WheelId, Vec2 } from './vehicle';
 import { WHEEL_IDS, VEHICLE, ackermannSteerAngles, wheelPosition } from './vehicle';
 import { wheelLoads } from './tyre';
@@ -84,6 +86,13 @@ export interface VehicleState {
 
 export interface WorldState {
   readonly scenarioId: ScenarioId;
+  /**
+   * The scenario this world is an attempt at, fully resolved to numbers. It is
+   * part of the state (rather than looked up by id) because the tunable
+   * parameters belong to the attempt: a wider bay is a different attempt, and a
+   * restart has to reproduce this exact layout.
+   */
+  readonly scenario: Scenario;
   /** Number of fixed timesteps taken since `createWorld`. */
   readonly tick: number;
   /** Accumulated simulated time (s). */
@@ -93,21 +102,17 @@ export interface WorldState {
   readonly vehicle: VehicleState;
 }
 
-/**
- * Scenario ids. Only the debug plane exists in the walking skeleton; ticket 06
- * introduces the scenario data model and the real parking scenarios.
- */
-export type ScenarioId = 'debug-plane';
-
 export interface CreateWorldOptions {
   readonly seed?: number;
   /** Override the spawn pose (defaults to the scenario's own spawn). */
   readonly spawn?: BodyPose;
+  /**
+   * Tunable scenario parameters (gap length, bay width, kerb height, ...).
+   * Anything omitted takes the scenario's default; anything out of the declared
+   * range is clamped into it.
+   */
+  readonly parameters?: Readonly<Record<string, number>>;
 }
-
-const SPAWN: Readonly<Record<ScenarioId, BodyPose>> = {
-  'debug-plane': { x: 0, y: 0, yaw: 0 },
-};
 
 /**
  * Place the wheels in world space for a given pose and rack position. Front
@@ -159,9 +164,14 @@ function restingWheelMotion(): Readonly<Record<WheelId, WheelMotion>> {
 
 /** Construct the initial world for a scenario. Pure and deterministic. */
 export function createWorld(scenarioId: ScenarioId, options: CreateWorldOptions = {}): WorldState {
-  const pose = options.spawn ?? SPAWN[scenarioId];
+  const resolved = resolveScenario(scenarioId, options.parameters);
+  const pose = options.spawn ?? resolved.spawn;
+  // A spawn override becomes the scenario's spawn, so `resetWorld` reproduces
+  // the world it was actually given rather than the template's default pose.
+  const scenario = options.spawn === undefined ? resolved : { ...resolved, spawn: pose };
   return {
     scenarioId,
+    scenario,
     tick: 0,
     time: 0,
     seed: options.seed ?? 0,
@@ -181,4 +191,17 @@ export function createWorld(scenarioId: ScenarioId, options: CreateWorldOptions 
       wheels: wheelStatesFor(pose, 0, restingWheelMotion()),
     },
   };
+}
+
+/**
+ * Instant restart: the same scenario, the same tuned parameters, the same seed
+ * and the same spawn, back at tick zero. Deep-equal to the world `createWorld`
+ * produced — the player's botched approach costs them nothing but the attempt.
+ */
+export function resetWorld(world: WorldState): WorldState {
+  return createWorld(world.scenario.id, {
+    seed: world.seed,
+    parameters: world.scenario.parameters,
+    spawn: world.scenario.spawn,
+  });
 }

@@ -8,13 +8,13 @@ Collision is not part of this ticket; the parked cars and kerb are geometry that
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Scenario is expressed purely as data with the fields above
-- [ ] Parallel park scenario renders: two parked cars, a kerb with a stated height, walls, and bay line markings
-- [ ] The target bay is visually unambiguous
-- [ ] The car spawns at a consistent approach pose
-- [ ] Scenario tolerances and tunable parameters are part of the data, not hardcoded in logic
-- [ ] Instant restart returns the world to its exact initial state
-- [ ] Test: `createWorld` for the parallel park scenario produces the expected spawn pose and obstacle set
-- [ ] Test: restarting produces a world identical to the initial one
+- [x] Scenario is expressed purely as data with the fields above
+- [x] Parallel park scenario renders: two parked cars, a kerb with a stated height, walls, and bay line markings
+- [x] The target bay is visually unambiguous
+- [x] The car spawns at a consistent approach pose
+- [x] Scenario tolerances and tunable parameters are part of the data, not hardcoded in logic
+- [x] Instant restart returns the world to its exact initial state
+- [x] Test: `createWorld` for the parallel park scenario produces the expected spawn pose and obstacle set
+- [x] Test: restarting produces a world identical to the initial one
