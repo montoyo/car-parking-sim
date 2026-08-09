@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Severity } from '../src/core/index';
+import type { Severity, SimEvent } from '../src/core/index';
 import { PARALLEL_PARK_PARAMETERS, VEHICLE, bodyOutline, createWorld } from '../src/core/index';
 import { eventsOfKind, hold } from './helpers/drive';
 
@@ -25,6 +25,15 @@ const PARKED_CAR_Y = 0.1 + VEHICLE.bodyWidth / 2;
 const BUILDING_WALL_FACE = -3.15 + 0.15;
 
 const SEVERITY_RANK: Readonly<Record<Severity, number>> = { graze: 0, knock: 1, impact: 2 };
+
+/**
+ * Bodywork-against-wall contacts only. The building wall sits behind the
+ * pavement, so any run-up at it also drives over the kerb; those rim strikes are
+ * a separate class of mistake and are asserted in `kerb.test.ts`.
+ */
+function wallContacts(events: readonly SimEvent[]) {
+  return eventsOfKind(events, 'contact').filter((c) => c.surface === 'wall');
+}
 
 /** In the gap, square to the kerb, nose `runUp` metres short of the front car. */
 function facingParkedCar(runUp = 1.5) {
@@ -108,9 +117,10 @@ describe('body collision against a wall', () => {
   it('driving into a wall emits a contact with surface wall and stops the car', () => {
     const result = hold(facingWall(0.8), 4, { gear: 'forward', throttle: 0.6 });
 
-    const contacts = eventsOfKind(result.events, 'contact');
+    // Only the wall: this approach crosses the kerb on its way over the
+    // pavement, and kerbing is its own class of mistake (see kerb.test.ts).
+    const contacts = wallContacts(result.events);
     expect(contacts.length).toBe(1);
-    expect(contacts[0]!.surface).toBe('wall');
     expect(contacts[0]!.part).toBe('body');
 
     expect(Math.abs(result.world.vehicle.longitudinalVelocity)).toBeLessThan(0.05);
@@ -122,7 +132,7 @@ describe('impact severity', () => {
   /** Closing speed and severity of the first contact from a given run-up. */
   function firstImpact(runUp: number, throttle: number) {
     const result = hold(facingWall(runUp), 8, { gear: 'forward', throttle });
-    const first = eventsOfKind(result.events, 'contact')[0];
+    const first = wallContacts(result.events)[0];
     expect(first, `no contact after ${runUp} m at throttle ${throttle}`).toBeDefined();
     return { closingSpeed: first!.closingSpeed, severity: first!.severity };
   }

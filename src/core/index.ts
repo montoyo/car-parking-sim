@@ -63,11 +63,14 @@ export {
   resolveScenario,
 } from './scenario';
 
-export type { ContactRecord, CollisionInput, CollisionOutcome } from './collision';
+export type { ContactRecord, ContactHit, CollisionInput, CollisionOutcome } from './collision';
 export {
   SEVERITY_THRESHOLDS,
   CONTACT_DEBOUNCE_SECONDS,
   severityFor,
+  worstSeverity,
+  escalateSeverity,
+  coalesceContacts,
   surfaceOf,
   bodyPolygon,
   obstaclePolygon,
@@ -76,6 +79,9 @@ export {
   pointInConvex,
   resolveBodyCollisions,
 } from './collision';
+
+export type { KerbCollisionInput, KerbCollisionOutcome, KerbStrip } from './kerb';
+export { kerbStrips, catchesBodywork, wheelFootprint, resolveKerbCollisions } from './kerb';
 
 export type { StepResult } from './step';
 export { step, FIXED_DT, wrapAngle } from './step';

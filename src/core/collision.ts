@@ -17,12 +17,14 @@
  *    updates its peak severity instead of emitting again.
  *
  * Kerb collision is NOT here: the roadway border is its own class of mistake and
- * gets its own module in ticket 08.
+ * lives in `kerb.ts`. What IS shared is the coalescing machinery below
+ * (`ContactHit` / `coalesceContacts`), so the two classes speak one vocabulary
+ * and write into one `contacts` list.
  */
 
 import type { ContactEvent, ContactSurface, Severity } from './events';
 import type { Obstacle, Scenario } from './scenario';
-import type { VehicleDefinition, Vec2 } from './vehicle';
+import type { VehicleDefinition, Vec2, WheelId } from './vehicle';
 import { VEHICLE, bodyOutline } from './vehicle';
 import type { BodyPose } from './world';
 
@@ -234,6 +236,87 @@ function centroid(poly: readonly Vec2[]): Vec2 {
   return { x: x / poly.length, y: y / poly.length };
 }
 
+/**
+ * One touch detected on one tick, before coalescing decides whether it is news.
+ * `record` carries this tick's severity and closing speed; `position` and `wheel`
+ * are what the event needs and the record does not keep.
+ */
+export interface ContactHit {
+  readonly record: ContactRecord;
+  readonly position: Vec2;
+  readonly wheel: WheelId | null;
+}
+
+/** The worse of two severity buckets. */
+export function worstSeverity(a: Severity, b: Severity): Severity {
+  return SEVERITY_ORDER[a] >= SEVERITY_ORDER[b] ? a : b;
+}
+
+/** One bucket worse — how a distinct escalation (mounting a kerb) is expressed. */
+export function escalateSeverity(severity: Severity): Severity {
+  return severity === 'graze' ? 'knock' : 'impact';
+}
+
+/**
+ * Turn this tick's touches into surviving `ContactRecord`s plus the events worth
+ * reporting. Shared by the body pass and the kerb pass so both coalesce the same
+ * way and cannot drift apart.
+ *
+ * A touch that continues an existing record is silent — a scrape lasting hundreds
+ * of ticks is one mistake — EXCEPT when it makes the contact strictly worse: a
+ * graze that becomes an impact is news the player, the score and the replay all
+ * need, so the escalation is reported with the new severity.
+ */
+export function coalesceContacts(
+  previous: readonly ContactRecord[],
+  hits: ReadonlyMap<string, ContactHit>,
+  tick: number,
+  time: number,
+): { readonly contacts: readonly ContactRecord[]; readonly events: readonly ContactEvent[] } {
+  const events: ContactEvent[] = [];
+  const kept: ContactRecord[] = [];
+  const live = new Map(prune(previous, time).map((c) => [c.key, c]));
+
+  for (const [key, hit] of hits) {
+    const before = live.get(key);
+    live.delete(key);
+    if (before === undefined) {
+      kept.push(hit.record);
+      events.push(eventFor(hit, hit.record.peakSeverity, hit.record.peakClosingSpeed, tick));
+      continue;
+    }
+    const peakSeverity = worstSeverity(before.peakSeverity, hit.record.peakSeverity);
+    const peakClosingSpeed = Math.max(before.peakClosingSpeed, hit.record.peakClosingSpeed);
+    kept.push({ ...before, peakSeverity, peakClosingSpeed, lastTouchTime: time });
+    if (SEVERITY_ORDER[peakSeverity] > SEVERITY_ORDER[before.peakSeverity]) {
+      events.push(eventFor(hit, peakSeverity, peakClosingSpeed, tick));
+    }
+  }
+  // Records still inside the debounce window but not touched this tick survive,
+  // so a scrape that flickers in and out of overlap stays one event.
+  for (const record of live.values()) kept.push(record);
+
+  return { contacts: kept, events };
+}
+
+function eventFor(
+  hit: ContactHit,
+  severity: Severity,
+  closingSpeed: number,
+  tick: number,
+): ContactEvent {
+  return {
+    kind: 'contact',
+    tick,
+    surface: hit.record.surface,
+    part: hit.record.part,
+    severity,
+    closingSpeed,
+    position: hit.position,
+    wheel: hit.wheel,
+  };
+}
+
 /** Inside test for a counter-clockwise convex polygon (boundary counts as in). */
 export function pointInConvex(point: Vec2, poly: readonly Vec2[]): boolean {
   for (let i = 0; i < poly.length; i++) {
@@ -277,10 +360,7 @@ export function resolveBodyCollisions(
     y: state.longitudinalVelocity * sin0 + state.lateralVelocity * cos0,
   };
 
-  const touched = new Map<
-    string,
-    { record: ContactRecord; closingSpeed: number; position: Vec2 }
-  >();
+  const touched = new Map<string, ContactHit>();
 
   for (let pass = 0; pass < RESOLUTION_PASSES; pass++) {
     const polygon = bodyPolygon(pose, v);
@@ -331,9 +411,10 @@ export function resolveBodyCollisions(
       const closingSpeed = Math.max(approach, 0);
       const key = `body:${obstacle.id}`;
       const existing = touched.get(key);
-      if (existing === undefined || closingSpeed > existing.closingSpeed) {
+      if (existing === undefined || closingSpeed > existing.record.peakClosingSpeed) {
         touched.set(key, {
           position: manifold.point,
+          wheel: null,
           record: {
             key,
             surface: surfaceOf(obstacle),
@@ -342,7 +423,6 @@ export function resolveBodyCollisions(
             peakClosingSpeed: closingSpeed,
             lastTouchTime: state.time,
           },
-          closingSpeed,
         });
       }
     }
@@ -351,40 +431,7 @@ export function resolveBodyCollisions(
   }
 
   // --- Coalescing: extend a live record, or open one and report it. ----------
-  const events: ContactEvent[] = [];
-  const kept: ContactRecord[] = [];
-  const previous = new Map(prune(state.contacts, state.time).map((c) => [c.key, c]));
-
-  for (const [key, hit] of touched) {
-    const before = previous.get(key);
-    previous.delete(key);
-    if (before === undefined) {
-      kept.push(hit.record);
-      events.push({
-        kind: 'contact',
-        tick: state.tick,
-        surface: hit.record.surface,
-        part: 'body',
-        severity: hit.record.peakSeverity,
-        closingSpeed: hit.record.peakClosingSpeed,
-        position: hit.position,
-        wheel: null,
-      });
-    } else {
-      kept.push({
-        ...before,
-        peakSeverity:
-          SEVERITY_ORDER[hit.record.peakSeverity] > SEVERITY_ORDER[before.peakSeverity]
-            ? hit.record.peakSeverity
-            : before.peakSeverity,
-        peakClosingSpeed: Math.max(before.peakClosingSpeed, hit.record.peakClosingSpeed),
-        lastTouchTime: state.time,
-      });
-    }
-  }
-  // Records still inside the debounce window but not touched this tick survive,
-  // so a scrape that flickers stays one event.
-  for (const record of previous.values()) kept.push(record);
+  const coalesced = coalesceContacts(state.contacts, touched, state.tick, state.time);
 
   const cos = Math.cos(pose.yaw);
   const sin = Math.sin(pose.yaw);
@@ -393,8 +440,8 @@ export function resolveBodyCollisions(
     longitudinalVelocity: velocity.x * cos + velocity.y * sin,
     lateralVelocity: -velocity.x * sin + velocity.y * cos,
     yawRate,
-    contacts: kept,
-    events,
+    contacts: coalesced.contacts,
+    events: coalesced.events,
   };
 }
 

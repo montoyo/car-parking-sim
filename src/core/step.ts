@@ -16,6 +16,7 @@ import type { ControlInput } from './input';
 import { clamp, sanitiseInput } from './input';
 import type { SimEvent } from './events';
 import { resolveBodyCollisions } from './collision';
+import { resolveKerbCollisions } from './kerb';
 import type { DynamicsState } from './dynamics';
 import { solveDynamics } from './dynamics';
 import { VEHICLE, rackRate } from './vehicle';
@@ -104,12 +105,30 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
   events.push(...collision.events);
   pose = collision.pose;
 
+  // The roadway border, tested after the body has been pushed out of anything
+  // solid so the wheels are reported where they finally are. Kerbing is its own
+  // class of mistake — a rim strike on a named wheel, or an overhang scrape — and
+  // it threads through the SAME contacts list so the two passes cannot prune each
+  // other's records.
+  const kerb = resolveKerbCollisions({
+    pose,
+    longitudinalVelocity: collision.longitudinalVelocity,
+    lateralVelocity: collision.lateralVelocity,
+    yawRate: collision.yawRate,
+    rack,
+    contacts: collision.contacts,
+    scenario: world.scenario,
+    tick,
+    time,
+  });
+  events.push(...kerb.events);
+
   return {
     world: {
       ...world,
       tick,
       time,
-      contacts: collision.contacts,
+      contacts: kerb.contacts,
       vehicle: {
         pose,
         longitudinalVelocity: collision.longitudinalVelocity,

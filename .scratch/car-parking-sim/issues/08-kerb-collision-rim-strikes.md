@@ -11,14 +11,14 @@ Contacts with the same object and part within a debounce window extend the exist
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The roadway border is modelled as a polyline with a height, separate from body obstacles
-- [ ] Wheel-footprint contact emits a rim strike naming the specific wheel
-- [ ] Mounting the kerb reports a higher severity than grazing it
-- [ ] Body outline at kerb height emits an overhang scrape reported as a body contact
-- [ ] Contacts with the same object and part inside a debounce window coalesce into one event with peak severity
-- [ ] Test: a wheel grazing the kerb emits a rim strike naming the correct wheel
-- [ ] Test: mounting the kerb reports higher severity than grazing
-- [ ] Test: body overhang over a high kerb reports a body contact, not a rim strike
-- [ ] Test: a sustained scrape emits one coalesced event, not many
+- [x] The roadway border is modelled as a polyline with a height, separate from body obstacles
+- [x] Wheel-footprint contact emits a rim strike naming the specific wheel
+- [x] Mounting the kerb reports a higher severity than grazing it
+- [x] Body outline at kerb height emits an overhang scrape reported as a body contact
+- [x] Contacts with the same object and part inside a debounce window coalesce into one event with peak severity
+- [x] Test: a wheel grazing the kerb emits a rim strike naming the correct wheel
+- [x] Test: mounting the kerb reports higher severity than grazing
+- [x] Test: body overhang over a high kerb reports a body contact, not a rim strike
+- [x] Test: a sustained scrape emits one coalesced event, not many
