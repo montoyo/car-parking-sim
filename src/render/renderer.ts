@@ -10,7 +10,11 @@
 import type { VehicleState, WheelId } from '../core/index';
 import { VEHICLE, WHEEL_IDS, bodyOutline, wheelPosition } from '../core/index';
 import type { Mat4 } from './mat4';
-import { multiply, orthographic, poseMatrix, topDownView } from './mat4';
+import { multiply, orthographic, perspective, poseMatrix, rotationY, topDownView } from './mat4';
+import type { CockpitPiece } from './cockpit';
+import { cockpitShell } from './cockpit';
+import type { LookState } from './camera';
+import { FIRST_PERSON_FOV, LOOK_AHEAD, bodyTransform, firstPersonViewMatrix } from './camera';
 
 const BOX_VS = `#version 300 es
 in vec3 aPosition;
@@ -72,6 +76,13 @@ interface GroundProgram {
   readonly uViewProjection: WebGLUniformLocation;
 }
 
+/**
+ * Which camera the frame is drawn through. First-person is the game; the
+ * top-down debug camera stays available (V) because it is how you check that
+ * what the driver sees agrees with where the car actually is.
+ */
+export type ViewMode = 'first-person' | 'top-down';
+
 /** Half-extents of a unit box drawn centred on its own origin. */
 interface BoxSize {
   readonly hx: number;
@@ -83,6 +94,8 @@ export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly box: BoxProgram;
   private readonly ground: GroundProgram;
+  private readonly cockpit: readonly CockpitPiece[] = cockpitShell(VEHICLE);
+  private viewMode: ViewMode = 'first-person';
   /** Metres visible vertically in the debug top-down camera. */
   private viewHeightMetres = 22;
 
@@ -94,6 +107,14 @@ export class Renderer {
     gl.enable(gl.CULL_FACE);
     this.box = this.createBoxProgram();
     this.ground = this.createGroundProgram();
+  }
+
+  setViewMode(mode: ViewMode): void {
+    this.viewMode = mode;
+  }
+
+  get mode(): ViewMode {
+    return this.viewMode;
   }
 
   /** Resize the drawing buffer to the canvas' CSS size and device pixel ratio. */
@@ -108,14 +129,21 @@ export class Renderer {
     this.gl.viewport(0, 0, width, height);
   }
 
-  /** Draw one frame of an (already interpolated) vehicle state. */
-  render(vehicle: VehicleState): void {
+  /**
+   * Draw one frame of an (already interpolated) vehicle state, seen from where
+   * the driver is looking. One pass, flat shading, no textures: the frame budget
+   * goes on holding the refresh rate, which is what low-speed control needs.
+   */
+  render(vehicle: VehicleState, look: LookState = LOOK_AHEAD): void {
     const gl = this.gl;
     this.resize();
     gl.clearColor(0.09, 0.1, 0.12, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const viewProjection = this.debugTopDownViewProjection(vehicle);
+    const firstPerson = this.viewMode === 'first-person';
+    const viewProjection = firstPerson
+      ? this.firstPersonViewProjection(vehicle, look)
+      : this.debugTopDownViewProjection(vehicle);
 
     gl.useProgram(this.ground.program);
     gl.uniformMatrix4fv(this.ground.uViewProjection, false, viewProjection);
@@ -134,22 +162,48 @@ export class Renderer {
     const bodyBottom = VEHICLE.sillHeight;
     const bodyTop = VEHICLE.bodyHeight;
     this.drawBox(
-      poseMatrix(vehicle.pose.x, vehicle.pose.y, 0, vehicle.pose.yaw),
+      this.bodyMatrix(vehicle),
       { x: centreX, y: 0, z: (bodyBottom + bodyTop) / 2 },
       { hx: halfLength, hy: VEHICLE.bodyWidth / 2, hz: (bodyTop - bodyBottom) / 2 },
       [0.78, 0.24, 0.22],
     );
 
-    // A nose marker so heading is unambiguous in the debug view.
-    this.drawBox(
-      poseMatrix(vehicle.pose.x, vehicle.pose.y, 0, vehicle.pose.yaw),
-      { x: Math.max(...xs) - 0.12, y: 0, z: bodyTop + 0.02 },
-      { hx: 0.12, hy: 0.28, hz: 0.03 },
-      [0.95, 0.9, 0.55],
-    );
+    // A nose marker so heading is unambiguous in the debug view — it would sit
+    // in the driver's eyeline, so it is drawn only from above.
+    if (!firstPerson) {
+      this.drawBox(
+      this.bodyMatrix(vehicle),
+        { x: Math.max(...xs) - 0.12, y: 0, z: bodyTop + 0.02 },
+        { hx: 0.12, hy: 0.28, hz: 0.03 },
+        [0.95, 0.9, 0.55],
+      );
+    }
 
     for (const id of WHEEL_IDS) {
       this.drawWheel(id, vehicle);
+    }
+
+    if (firstPerson) this.drawCockpit(vehicle);
+  }
+
+  /**
+   * The cockpit shell, drawn in the body's frame so it moves and leans with the
+   * car. Its pieces are the A-pillars, door frames, roof and bonnet edge — the
+   * occlusion that makes parking hard.
+   */
+  private drawCockpit(vehicle: VehicleState): void {
+    const body = this.bodyMatrix(vehicle);
+    for (const piece of this.cockpit) {
+      const placement = multiply(
+        poseMatrix(piece.centre.x, piece.centre.y, piece.centre.z, 0),
+        rotationY(piece.slant),
+      );
+      this.drawBox(
+        multiply(body, placement),
+        { x: 0, y: 0, z: 0 },
+        { hx: piece.half.x, hy: piece.half.y, hz: piece.half.z },
+        piece.colour,
+      );
     }
   }
 
@@ -157,7 +211,7 @@ export class Renderer {
     const local = wheelPosition(id, VEHICLE);
     const steer = vehicle.wheels[id].steerAngle;
     const model = multiply(
-      poseMatrix(vehicle.pose.x, vehicle.pose.y, 0, vehicle.pose.yaw),
+      this.bodyMatrix(vehicle),
       poseMatrix(local.x, local.y, VEHICLE.wheelRadius, steer),
     );
     this.drawBox(
@@ -182,6 +236,22 @@ export class Renderer {
     gl.uniformMatrix4fv(this.box.uModel, false, multiply(parent, local));
     gl.uniform3f(this.box.uColour, colour[0], colour[1], colour[2]);
     gl.drawArrays(gl.TRIANGLES, 0, this.box.count);
+  }
+
+  /**
+   * The body's placement, including the cosmetic pitch and roll from the
+   * dynamics — the same transform the camera uses, so the shell never floats
+   * away from the car as it leans.
+   */
+  private bodyMatrix(vehicle: VehicleState): Mat4 {
+    return bodyTransform(vehicle);
+  }
+
+  private firstPersonViewProjection(vehicle: VehicleState, look: LookState): Mat4 {
+    const aspect = this.canvas.width / Math.max(1, this.canvas.height);
+    // Near plane inside the cockpit trim; far plane covers a whole car park.
+    const projection = perspective(FIRST_PERSON_FOV, aspect, 0.04, 250);
+    return multiply(projection, firstPersonViewMatrix(vehicle, look, VEHICLE));
   }
 
   private debugTopDownViewProjection(vehicle: VehicleState): Mat4 {

@@ -8,6 +8,12 @@
 import type { WorldState } from '../core/index';
 import { referenceSteerAngle } from '../core/index';
 
+/** Presentation-only readouts the HUD shows alongside the world state. */
+export interface HudFrameInfo {
+  readonly fps: number;
+  readonly pointerLocked: boolean;
+}
+
 export class Hud {
   private readonly readout: HTMLElement;
   private readonly needle: HTMLElement;
@@ -24,11 +30,14 @@ export class Hud {
     this.lockLabel = requireChild(root, '.hud-lock');
   }
 
-  update(world: WorldState): void {
+  update(world: WorldState, frame?: HudFrameInfo): void {
     const v = world.vehicle;
     const kph = Math.abs(v.longitudinalVelocity) * 3.6;
     const gearLabel = v.gear === 'forward' ? 'D' : v.gear === 'reverse' ? 'R' : 'N';
-    this.readout.textContent = `gear ${gearLabel}   ${kph.toFixed(1)} km/h   t ${world.time.toFixed(1)}s`;
+    const fps = frame && frame.fps > 0 ? `   ${Math.round(frame.fps)} fps` : '';
+    const mouse = frame && !frame.pointerLocked ? '   [click to look around]' : '';
+    this.readout.textContent =
+      `gear ${gearLabel}   ${kph.toFixed(1)} km/h   t ${world.time.toFixed(1)}s${fps}${mouse}`;
 
     // The needle sweeps the bar: +1 (full LEFT lock) sits at the left end.
     this.needle.style.left = `${(0.5 - v.rack * 0.5) * 100}%`;

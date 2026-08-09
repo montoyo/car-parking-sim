@@ -9,6 +9,7 @@
 import type { SimEvent, WorldState } from './core/index';
 import { FIXED_DT, createWorld, step } from './core/index';
 import { KeyboardAdapter } from './input/keyboard';
+import { LookController } from './input/look';
 import { Renderer } from './render/renderer';
 import { interpolateVehicle } from './render/interpolate';
 import { Hud } from './ui/hud';
@@ -26,12 +27,24 @@ function main(): void {
   const hud = new Hud(hudRoot);
   const keyboard = new KeyboardAdapter();
   keyboard.attach(window);
+  // The head is a device adapter like any other: mouse look plus one-button
+  // shoulder checks in, two angles out.
+  const look = new LookController();
+  look.attach(canvas, window);
+
+  // V swaps between the driver's seat and the top-down debug camera.
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyV') {
+      renderer.setViewMode(renderer.mode === 'first-person' ? 'top-down' : 'first-person');
+    }
+  });
 
   let previous: WorldState = createWorld('debug-plane');
   let current: WorldState = previous;
   let accumulator = 0;
   let lastFrameMs: number | null = null;
   let paused = false;
+  const fps = new FrameRateMeter();
 
   // The tab losing focus must not let time (or physics) run away.
   window.addEventListener('blur', () => {
@@ -65,11 +78,30 @@ function main(): void {
     }
 
     const t = accumulator / FIXED_DT;
-    renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t));
-    hud.update(current);
+    // The head advances on the display clock, not the fixed timestep: it is a
+    // camera, not simulation state, so it must never feed back into the core.
+    const gaze = look.sample(paused ? 0 : elapsed);
+    renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze);
+    hud.update(current, { fps: fps.sample(elapsed), pointerLocked: look.locked });
   };
 
   requestAnimationFrame(frame);
+}
+
+/**
+ * Smoothed frames per second, shown in the HUD. The first-person pass has to
+ * hold the refresh rate on a laptop, and a number on screen is how that gets
+ * checked by eye.
+ */
+class FrameRateMeter {
+  private smoothed = 0;
+
+  sample(elapsedSeconds: number): number {
+    if (elapsedSeconds <= 0) return this.smoothed;
+    const instant = 1 / elapsedSeconds;
+    this.smoothed = this.smoothed === 0 ? instant : this.smoothed + (instant - this.smoothed) * 0.1;
+    return this.smoothed;
+  }
 }
 
 function report(events: readonly SimEvent[]): void {
