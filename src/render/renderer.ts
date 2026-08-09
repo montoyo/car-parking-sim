@@ -15,6 +15,11 @@ import type { CockpitPiece } from './cockpit';
 import { cockpitShell } from './cockpit';
 import type { LookState } from './camera';
 import { FIRST_PERSON_FOV, LOOK_AHEAD, bodyTransform, firstPersonViewMatrix } from './camera';
+import {
+  REVERSE_CAMERA_TARGET,
+  reverseCameraActive,
+  reverseCameraViewProjection,
+} from './reverse-camera';
 import type { MirrorAimSet, MirrorId } from './mirror';
 import {
   MIRROR_IDS,
@@ -117,6 +122,37 @@ void main() {
   outColour = vec4(texture(uMirror, uv).rgb, 1.0);
 }`;
 
+/**
+ * The reversing camera's screen: a rectangle of the viewport showing what the
+ * lens sees. Unlike the mirrors this is NOT world geometry — a real reversing
+ * camera's picture is on a dashboard screen, not out of the window — so it is
+ * composited straight into clip space.
+ */
+const PANEL_VS = `#version 300 es
+in vec2 aPosition;
+uniform vec4 uRect;
+out vec2 vUv;
+void main() {
+  vUv = aPosition * 0.5 + 0.5;
+  gl_Position = vec4(uRect.xy + aPosition * uRect.zw, 0.0, 1.0);
+}`;
+
+/**
+ * `uBorder` fades the outer few percent to a dark surround, so the picture reads
+ * as a screen inset rather than as a hole cut in the windscreen.
+ */
+const PANEL_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uImage;
+out vec4 outColour;
+void main() {
+  vec2 edge = min(vUv, 1.0 - vUv);
+  float inset = smoothstep(0.0, 0.02, min(edge.x, edge.y));
+  vec3 image = texture(uImage, vUv).rgb;
+  outColour = vec4(mix(vec3(0.02, 0.02, 0.03), image, inset), 1.0);
+}`;
+
 interface BoxProgram {
   readonly program: WebGLProgram;
   readonly vao: WebGLVertexArrayObject;
@@ -141,7 +177,13 @@ interface GlassProgram {
   readonly uWarp: WebGLUniformLocation;
 }
 
-/** A mirror's off-screen render target. Deliberately tiny — see `mirror.ts`. */
+interface PanelProgram {
+  readonly program: WebGLProgram;
+  readonly vao: WebGLVertexArrayObject;
+  readonly uRect: WebGLUniformLocation;
+}
+
+/** An off-screen render target. Deliberately tiny — see `mirror.ts`. */
 interface MirrorTarget {
   readonly framebuffer: WebGLFramebuffer;
   readonly texture: WebGLTexture;
@@ -164,6 +206,12 @@ export interface RenderOptions {
    * passes then update less often, the far wing mirror first.
    */
   readonly overBudget?: boolean;
+  /**
+   * Whether the scenario offers a reversing camera. The scenario says so in data;
+   * the picture then appears whenever the car is actually in reverse, as a real
+   * one does.
+   */
+  readonly reversingCamera?: boolean;
 }
 
 /**
@@ -186,6 +234,9 @@ export class Renderer {
   private readonly ground: GroundProgram;
   private readonly glass: GlassProgram;
   private readonly mirrors: Readonly<Record<MirrorId, MirrorTarget>>;
+  /** The reversing camera's own target and the quad that composites it. */
+  private readonly reverseTarget: MirrorTarget;
+  private readonly panel: PanelProgram;
   private readonly cockpit: readonly CockpitPiece[] = cockpitShell(VEHICLE);
   private viewMode: ViewMode = 'first-person';
   /** Frames drawn, which is what the mirror update schedule is keyed on. */
@@ -207,6 +258,12 @@ export class Renderer {
       wingLeft: this.createMirrorTarget('wingLeft'),
       wingRight: this.createMirrorTarget('wingRight'),
     };
+    this.reverseTarget = this.createRenderTarget(
+      REVERSE_CAMERA_TARGET.width,
+      REVERSE_CAMERA_TARGET.height,
+      'reversing camera',
+    );
+    this.panel = this.createPanelProgram();
   }
 
   setViewMode(mode: ViewMode): void {
@@ -241,8 +298,10 @@ export class Renderer {
 
     // Mirror passes first: they render into their own targets, which the main
     // pass then samples when it draws the glass.
+    const camera = firstPerson && reverseCameraActive(vehicle, options.reversingCamera === true);
     if (firstPerson) {
       this.renderMirrors(vehicle, aim, options.overBudget === true, options.scenario);
+      if (camera) this.renderReverseCamera(vehicle, options.scenario);
     }
     this.frameIndex++;
 
@@ -262,7 +321,47 @@ export class Renderer {
     if (firstPerson) {
       this.drawCockpit(vehicle);
       this.drawGlass(vehicle, aim, viewProjection);
+      if (camera) this.drawReverseCameraPanel();
     }
+  }
+
+  /**
+   * The reversing camera's pass: the same scene, from the lens in the tailgate.
+   * Nothing is reflected, so this pass culls back faces like any normal camera —
+   * that is the one structural difference from a mirror pass.
+   */
+  private renderReverseCamera(vehicle: VehicleState, scenario?: Scenario | undefined): void {
+    const gl = this.gl;
+    const target = this.reverseTarget;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+    gl.viewport(0, 0, target.width, target.height);
+    gl.clearColor(0.09, 0.1, 0.12, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    this.drawScene(vehicle, reverseCameraViewProjection(vehicle, target.width / target.height), {
+      noseMarker: false,
+      scenario,
+    });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  /** Composite the camera's picture low and centre, where a dash screen sits. */
+  private drawReverseCameraPanel(): void {
+    const gl = this.gl;
+    gl.useProgram(this.panel.program);
+    gl.bindVertexArray(this.panel.vao);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    // Centre and half-size in clip space: a quarter of the width, low down.
+    gl.uniform4f(this.panel.uRect, 0, -0.6, 0.24, 0.24 * (200 / 320) * this.aspect());
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.reverseTarget.texture);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.enable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  private aspect(): number {
+    return Math.max(1e-3, this.canvas.width) / Math.max(1e-3, this.canvas.height);
   }
 
   /**
@@ -685,9 +784,30 @@ export class Renderer {
    * filtering is what makes a 72-pixel-high mirror read as a coarse reflection
    * rather than as a mosaic.
    */
-  private createMirrorTarget(id: MirrorId): MirrorTarget {
+  private createPanelProgram(): PanelProgram {
     const gl = this.gl;
+    const program = compileProgram(gl, PANEL_VS, PANEL_FS);
+    // prettier-ignore
+    const quad = new Float32Array([
+      -1, -1,   1, -1,   1, 1,
+      -1, -1,   1,  1,  -1, 1,
+    ]);
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    bindAttribute(gl, program, 'aPosition', quad, 2);
+    gl.bindVertexArray(null);
+    gl.useProgram(program);
+    gl.uniform1i(uniform(gl, program, 'uImage'), 0);
+    return { program, vao, uRect: uniform(gl, program, 'uRect') };
+  }
+
+  private createMirrorTarget(id: MirrorId): MirrorTarget {
     const { width, height } = mirrorTargetSize(id, VEHICLE);
+    return this.createRenderTarget(width, height, id);
+  }
+
+  private createRenderTarget(width: number, height: number, label: string): MirrorTarget {
+    const gl = this.gl;
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -705,7 +825,7 @@ export class Renderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-      throw new Error(`Mirror render target for ${id} is incomplete.`);
+      throw new Error(`Render target for ${label} is incomplete.`);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return { framebuffer, texture, width, height };

@@ -17,6 +17,8 @@ import { BestScores } from './ui/bests';
 import { ContactCue } from './ui/contact-cue';
 import { Hud } from './ui/hud';
 import { ReplayScreen } from './ui/replay';
+import type { ScenarioChoice } from './ui/scenario-select';
+import { ScenarioSelect } from './ui/scenario-select';
 import { ScorecardScreen } from './ui/scorecard';
 
 const MAX_CATCHUP_SECONDS = 0.25;
@@ -32,9 +34,17 @@ function main(): void {
   const cueRoot = document.getElementById('cue');
   const cardRoot = document.getElementById('scorecard');
   const replayRoot = document.getElementById('replay');
-  if (!(canvas instanceof HTMLCanvasElement) || !hudRoot || !cueRoot || !cardRoot || !replayRoot) {
+  const selectRoot = document.getElementById('select');
+  if (
+    !(canvas instanceof HTMLCanvasElement) ||
+    !hudRoot ||
+    !cueRoot ||
+    !cardRoot ||
+    !replayRoot ||
+    !selectRoot
+  ) {
     throw new Error(
-      'Expected #viewport, #hud, #cue, #scorecard and #replay elements in the document.',
+      'Expected #viewport, #hud, #cue, #scorecard, #replay and #select elements in the document.',
     );
   }
 
@@ -52,6 +62,11 @@ function main(): void {
   // replay screen so the loop from mistake to next attempt is one click.
   const replay = new ReplayScreen(replayRoot, () => restart());
   replay.attach(window);
+  // The menu the player picks a manoeuvre from: difficulty and pass criteria shown
+  // before the attempt starts, tunable parameters on sliders, and the best score for
+  // the exact parameter set currently dialled in.
+  const select = new ScenarioSelect(selectRoot, bests, (choice) => begin(choice));
+  select.attach(window);
   const keyboard = new KeyboardAdapter();
   keyboard.attach(window);
   // The head is a device adapter like any other: mouse look plus one-button
@@ -66,6 +81,7 @@ function main(): void {
   window.addEventListener('keydown', (e) => {
     // V is the live debug camera; while the replay owns the viewport its own T
     // toggle is the one that matters.
+    if (select.visible) return;
     if (e.code === 'KeyV' && !(replay.visible && replay.view === 'first-person')) {
       renderer.setViewMode(renderer.mode === 'first-person' ? 'top-down' : 'first-person');
     }
@@ -75,7 +91,9 @@ function main(): void {
     if (e.code === 'Backspace' && !e.repeat) restart();
   });
 
-  let previous: WorldState = createWorld('parallel-park');
+  let previous: WorldState = createWorld(select.choice().id, {
+    parameters: select.choice().parameters,
+  });
   let current: WorldState = previous;
   /** The whole attempt's event log — what scoring and the replay markers consume. */
   let log: SimEvent[] = [];
@@ -110,6 +128,21 @@ function main(): void {
   };
 
   /**
+   * Start a fresh attempt at a chosen scenario and tuning. Everything a restart
+   * clears is cleared here too — including the replay, which would otherwise keep
+   * the viewport it takes over in first-person.
+   */
+  const begin = (choice: ScenarioChoice): void => {
+    current = createWorld(choice.id, { parameters: choice.parameters });
+    previous = current;
+    accumulator = 0;
+    log = [];
+    recorder = new Recorder(current);
+    scorecard.hide();
+    replay.hide();
+  };
+
+  /**
    * The attempt is over: score it, remember it if it is a best, and show the
    * breakdown. The core has already latched `completion`, so the loop below simply
    * stops stepping.
@@ -127,7 +160,8 @@ function main(): void {
     const elapsed = lastFrameMs === null ? 0 : (nowMs - lastFrameMs) / 1000;
     lastFrameMs = nowMs;
 
-    if (!paused) {
+    // The menu is a pause: the player is reading pass criteria, not driving.
+    if (!paused && !select.visible) {
       accumulator = Math.min(accumulator + elapsed, MAX_CATCHUP_SECONDS);
       // A finished attempt is frozen: the player is reading their score, not
       // driving. Backspace restarts.
@@ -174,12 +208,15 @@ function main(): void {
         scenario: replay.scenario ?? current.scenario,
         mirrorAim,
         overBudget,
+        reversingCamera: (replay.scenario ?? current.scenario).reversingCamera,
       });
     } else {
       renderer.render(interpolateVehicle(previous.vehicle, current.vehicle, t), gaze, {
         scenario: current.scenario,
         mirrorAim,
         overBudget,
+        // Data, not a code path: the scenario says whether the car has a camera.
+        reversingCamera: current.scenario.reversingCamera,
       });
     }
     hud.update(current, {

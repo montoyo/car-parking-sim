@@ -55,6 +55,7 @@ export type {
 } from './scenario';
 export {
   SCENARIO_IDS,
+  PLAYABLE_SCENARIO_IDS,
   SCENARIO_TEMPLATES,
   PARALLEL_PARK_PARAMETERS,
   scenarioTemplate,

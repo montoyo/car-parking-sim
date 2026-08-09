@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../src/core/index';
 import {
+  PLAYABLE_SCENARIO_IDS,
   VEHICLE,
   bodyCentre,
   createWorld,
@@ -65,6 +66,31 @@ describe('reference line', () => {
       // 2% slack: the path is sampled, and discrete curvature over samples is
       // slightly pessimistic at the tightest point.
       expect(radius).toBeGreaterThan(minRadius * 0.98);
+    }
+  });
+
+  it('is drivable on every shipping scenario, not just the parallel park', () => {
+    // Adding a scenario gets a reference line for free; this is the property that
+    // says the line it gets is one the car could actually follow.
+    const minRadius = turnRadius(1, VEHICLE);
+    for (const id of PLAYABLE_SCENARIO_IDS) {
+      const line = referenceLine(createWorld(id).scenario);
+      expect(line.length, id).toBeGreaterThan(8);
+      for (let i = 1; i < line.length - 1; i++) {
+        const radius = circumRadius(line[i - 1] as Vec2, line[i] as Vec2, line[i + 1] as Vec2);
+        expect(radius, `${id} sample ${i}`).toBeGreaterThan(minRadius * 0.98);
+      }
+    }
+  });
+
+  it('ends in the middle of the bay on every shipping scenario', () => {
+    for (const id of PLAYABLE_SCENARIO_IDS) {
+      const scenario = createWorld(id).scenario;
+      const line = referenceLine(scenario);
+      const bay = scenario.bay;
+      if (!bay) throw new Error(`${id} has a bay`);
+      expect(distance(line[0] as Vec2, bodyCentre(scenario.spawn)), id).toBeLessThan(0.05);
+      expect(distance(line[line.length - 1] as Vec2, bay.centre), id).toBeLessThan(0.05);
     }
   });
 

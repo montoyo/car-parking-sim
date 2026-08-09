@@ -10,13 +10,13 @@ Some scenarios offer an optional reversing camera, so the player can compare mir
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Forward bay, reverse bay, angled/echelon and tight-kerb scenarios all playable and completable
-- [ ] Each new scenario is expressed as data, with no bespoke scoring or completion code
-- [ ] Selection menu lists scenarios with difficulty and pass criteria shown before starting
-- [ ] Gap length, bay width and kerb height are adjustable where the scenario declares them tunable
-- [ ] Best scores are keyed by scenario id and parameter set
-- [ ] Optional reversing camera available on the scenarios that declare it
-- [ ] Test: a scripted known-good manoeuvre completes each scenario with zero contacts
-- [ ] Test: each scenario's fully-inside-bay gate rejects a car left partly outside
+- [x] Forward bay, reverse bay, angled/echelon and tight-kerb scenarios all playable and completable
+- [x] Each new scenario is expressed as data, with no bespoke scoring or completion code
+- [x] Selection menu lists scenarios with difficulty and pass criteria shown before starting
+- [x] Gap length, bay width and kerb height are adjustable where the scenario declares them tunable
+- [x] Best scores are keyed by scenario id and parameter set
+- [x] Optional reversing camera available on the scenarios that declare it
+- [x] Test: a scripted known-good manoeuvre completes each scenario with zero contacts
+- [x] Test: each scenario's fully-inside-bay gate rejects a car left partly outside
