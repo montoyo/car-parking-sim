@@ -1,8 +1,13 @@
 /**
- * Minimal debug HUD: gear, speed, elapsed simulated time, plus a steering rack
- * indicator so the player can see how much lock is applied (and that winding it
- * on takes time). Reads `WorldState` and the vehicle definition only — no
- * simulation logic lives here.
+ * Minimal debug HUD: gear, speed, elapsed simulated time, plus a steering wheel
+ * that turns with the rack so the player can see how much lock is applied (and
+ * that winding it on takes time). Reads `WorldState` and the vehicle definition
+ * only — no simulation logic lives here.
+ *
+ * The wheel is a wheel rather than a slider because that is the instrument being
+ * modelled: a bar tells you a number, a wheel tells you where your hands are. The
+ * two keycaps beside it are the keys that turn it, lit while they are winding the
+ * rack on, so the control and its indicator are one thing on screen.
  */
 
 import type { WorldState } from '../core/index';
@@ -21,6 +26,25 @@ export interface HudFrameInfo {
   /** The key that opens the control reference, so nobody has to guess. */
   readonly controlsKey?: string;
   readonly gamepad?: boolean;
+  /** EV mode has no gear to report, so the readout says what it is doing instead. */
+  readonly evMode?: boolean;
+  /** The steering TARGET the player is asking for, in [-1, 1]; +1 is full left. */
+  readonly steerInput?: number;
+  /** How the steer-left and steer-right keys read, for the caps by the wheel. */
+  readonly steerKeys?: { readonly left: string; readonly right: string };
+}
+
+/**
+ * How far the rim turns at full lock (degrees). A real rack is well over a turn
+ * each way, but a graphic that can wrap past vertical stops reading as an angle,
+ * so this is the largest rotation that is still unambiguous at a glance.
+ */
+export const WHEEL_DEGREES_AT_FULL_LOCK = 220;
+
+/** Rim rotation (degrees, clockwise-positive) for a rack position. */
+export function wheelRotationDegrees(rack: number): number {
+  // +1 rack is full LEFT lock, and left is anticlockwise on screen.
+  return -rack * WHEEL_DEGREES_AT_FULL_LOCK;
 }
 
 /**
@@ -50,7 +74,9 @@ export function speedBarFraction(longitudinalVelocity: number): number {
 export class Hud {
   private readonly scenario: HTMLElement;
   private readonly readout: HTMLElement;
-  private readonly needle: HTMLElement;
+  private readonly wheelFace: HTMLElement;
+  private readonly keyLeft: HTMLElement;
+  private readonly keyRight: HTMLElement;
   private readonly speedFill: HTMLElement;
   private readonly lockLabel: HTMLElement;
   private readonly mirrorLabel: HTMLElement;
@@ -59,14 +85,19 @@ export class Hud {
     root.innerHTML =
       '<div class="hud-scenario"></div>' +
       '<div class="hud-readout"></div>' +
-      '<div class="hud-rack"><div class="hud-rack-centre"></div>' +
-      '<div class="hud-rack-needle"></div></div>' +
+      '<div class="hud-wheel">' +
+      '<div class="hud-wheel-key hud-wheel-key-left"></div>' +
+      `<div class="hud-wheel-face">${STEERING_WHEEL_SVG}</div>` +
+      '<div class="hud-wheel-key hud-wheel-key-right"></div>' +
+      '</div>' +
       '<div class="hud-speed"><div class="hud-speed-fill"></div></div>' +
       '<div class="hud-lock"></div>' +
       '<div class="hud-mirror"></div>';
     this.scenario = requireChild(root, '.hud-scenario');
     this.readout = requireChild(root, '.hud-readout');
-    this.needle = requireChild(root, '.hud-rack-needle');
+    this.wheelFace = requireChild(root, '.hud-wheel-face');
+    this.keyLeft = requireChild(root, '.hud-wheel-key-left');
+    this.keyRight = requireChild(root, '.hud-wheel-key-right');
     this.speedFill = requireChild(root, '.hud-speed-fill');
     this.lockLabel = requireChild(root, '.hud-lock');
     this.mirrorLabel = requireChild(root, '.hud-mirror');
@@ -83,19 +114,34 @@ export class Hud {
       // here only pushed this line off the edge of the screen.
       `${scenario.name}   [${scenario.difficulty}]   to pass: ${scenario.passSummary}`;
 
-    const gearLabel = v.gear === 'forward' ? 'D' : v.gear === 'reverse' ? 'R' : 'N';
+    // EV mode has no selector: what to show is the direction being driven, and
+    // "hold" for the auto-brake that a lifted-off EV applies.
+    const gearLabel = frame?.evMode
+      ? v.gear === 'forward'
+        ? 'EV \u25b2 forward'
+        : v.gear === 'reverse'
+          ? 'EV \u25bc backward'
+          : 'EV hold'
+      : `gear ${v.gear === 'forward' ? 'D' : v.gear === 'reverse' ? 'R' : 'N'}`;
     const fps = frame && frame.fps > 0 ? `   ${Math.round(frame.fps)} fps` : '';
     const mouse = frame && !frame.pointerLocked ? '   [click to look around]' : '';
     const audio = frame?.audio ? `   audio ${frame.audio}` : '';
     const pad = frame?.gamepad ? '   pad' : '';
     const help = frame?.controlsKey ? `   [${frame.controlsKey} controls]` : '';
     this.readout.textContent =
-      `gear ${gearLabel}   ${formatSpeed(v.longitudinalVelocity)}   t ${world.time.toFixed(1)}s` +
+      `${gearLabel}   ${formatSpeed(v.longitudinalVelocity)}   t ${world.time.toFixed(1)}s` +
       `${fps}${pad}${audio}${mouse}${help}`;
     this.speedFill.style.width = `${speedBarFraction(v.longitudinalVelocity) * 100}%`;
 
-    // The needle sweeps the bar: +1 (full LEFT lock) sits at the left end.
-    this.needle.style.left = `${(0.5 - v.rack * 0.5) * 100}%`;
+    // The rim turns with the rack, so the indicator IS the control.
+    this.wheelFace.style.transform = `rotate(${wheelRotationDegrees(v.rack).toFixed(1)}deg)`;
+
+    // The keycaps light while their key is actually winding the rack on.
+    const steerInput = frame?.steerInput ?? 0;
+    this.keyLeft.textContent = frame?.steerKeys?.left ?? '\u2190';
+    this.keyRight.textContent = frame?.steerKeys?.right ?? '\u2192';
+    this.keyLeft.classList.toggle('hud-wheel-key-on', steerInput > v.rack + 1e-6);
+    this.keyRight.classList.toggle('hud-wheel-key-on', steerInput < v.rack - 1e-6);
 
     const side = v.rack > 0 ? 'L' : 'R';
     const roadWheelDegrees = Math.abs((referenceSteerAngle(v.rack) * 180) / Math.PI);
@@ -119,6 +165,19 @@ export class Hud {
     }
   }
 }
+
+/**
+ * The rim, spokes and hub. Inline so it rotates as one element with no asset to
+ * load, and in `currentColor` so it inherits the HUD's palette.
+ */
+const STEERING_WHEEL_SVG =
+  '<svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">' +
+  '<circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="8" />' +
+  '<circle cx="50" cy="50" r="11" fill="currentColor" />' +
+  '<path d="M8 50 H39 M61 50 H92 M50 61 V90" stroke="currentColor" stroke-width="8" ' +
+  'stroke-linecap="round" />' +
+  '<path d="M50 4 v10" stroke="#ff5252" stroke-width="6" stroke-linecap="round" />' +
+  '</svg>';
 
 const MIRROR_LABELS: Readonly<Record<MirrorId, string>> = {
   interior: 'interior',

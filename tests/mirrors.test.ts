@@ -202,7 +202,11 @@ describe('convexity', () => {
     // the convex one covers that much again times the widening.
     const flatHalf = Math.atan(VEHICLE.mirrors.wingLeft.width / 2 / distance);
     const ratio = Math.tan(wing.horizontal) / Math.tan(flatHalf);
-    expect(ratio).toBeGreaterThan(1.6);
+    // Comfortably more than the flat glass would give. Not as much MORE as the
+    // widening alone promises, because the wings now sit where the driver can
+    // actually see them — closer to the eye and further round — and glass viewed
+    // that obliquely foreshortens. See `mirror-visibility.test.ts`.
+    expect(ratio).toBeGreaterThan(1.5);
     // Never MORE than the widening: the glass is tilted to the view axis, so the
     // frustum fitted to its corners is slightly foreshortened, never inflated.
     expect(ratio).toBeLessThanOrEqual(widening * 1.001);

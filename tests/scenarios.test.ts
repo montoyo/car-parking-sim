@@ -28,10 +28,10 @@ import {
 import type { DriveSegment } from './helpers/drive';
 import { drive, eventsOfKind, score } from './helpers/drive';
 
-/** The player declaring they are done: stopped, handbrake set. */
+/** The player declaring they are done: stopped, then finish pressed. */
 const DECLARE_DONE: DriveSegment = {
   seconds: 1.4,
-  input: { gear: 'neutral', brake: 1, handbrake: true },
+  input: { gear: 'neutral', brake: 1, finishRequested: true },
 };
 
 /**
@@ -214,7 +214,7 @@ describe.each(REACHABLE_IDS)('%s is completable', (id) => {
     };
     const result = drive(createWorld(id, { spawn: halfOut }), [
       { seconds: 1.2, input: { gear: 'forward' } },
-      { seconds: 1.6, input: { gear: 'forward', brake: 1, handbrake: true } },
+      { seconds: 1.6, input: { gear: 'forward', brake: 1, finishRequested: true } },
     ]);
     const card = score(result);
 

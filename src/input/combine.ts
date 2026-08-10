@@ -30,5 +30,6 @@ export function combineInputs(digital: DeviceInput, analogue: DeviceInput | null
     brake: Math.max(a.brake, b.brake),
     handbrake: a.handbrake || b.handbrake,
     gear: newer.gear,
+    finishRequested: a.finishRequested || b.finishRequested,
   };
 }

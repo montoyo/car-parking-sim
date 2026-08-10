@@ -205,12 +205,22 @@ export function contactMarkers(recording: Recording): readonly ContactMarker[] {
     .sort((a, b) => a.tick - b.tick);
 }
 
-/** Gear-change markers: where each shunt was made. */
+/**
+ * Gear-change markers: where each SHUNT was made — the same reversals scoring
+ * counts, not every gear change. Selecting neutral is not a shunt, and in EV mode
+ * (where lifting off the key IS neutral) marking them all would bury the two or
+ * three moments worth scrubbing to under a marker per lift-off.
+ */
 export function gearChangeMarkers(recording: Recording): readonly GearChangeMarker[] {
   const out: GearChangeMarker[] = [];
+  let previous: 'forward' | 'reverse' | null = null;
   for (const event of recording.events) {
     if (event.kind !== 'gearChange') continue;
     const change = event as GearChangeEvent;
+    if (change.to === 'neutral') continue;
+    const reversal = previous !== null && previous !== change.to;
+    previous = change.to;
+    if (!reversal) continue;
     const frameIndex = frameIndexForTick(recording, change.tick);
     out.push({
       kind: 'gearChange',

@@ -154,30 +154,76 @@
         width: 0;
         background: #9be36f;
       }
-      .hud-rack {
-        position: relative;
-        width: 180px;
-        height: 8px;
-        margin: 6px 0 4px;
-        background: rgba(255, 255, 255, 0.12);
-        border-radius: 4px;
+      /* Steering wheel: the rim turns with the rack, flanked by the keys that
+         turn it, which light up while they are winding it on. */
+      .hud-wheel {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0 6px;
       }
-      .hud-rack-centre {
-        position: absolute;
-        left: 50%;
-        top: -2px;
-        width: 1px;
-        height: 12px;
-        background: rgba(255, 255, 255, 0.45);
+      .hud-wheel-face {
+        width: 46px;
+        height: 46px;
+        color: #6fd3ff;
+        /* No transition: the rack already ramps, and easing it twice would lie
+           about how fast the wheel is actually turning. */
+        transform-origin: 50% 50%;
       }
-      .hud-rack-needle {
-        position: absolute;
-        top: -3px;
-        width: 4px;
-        height: 14px;
-        margin-left: -2px;
-        border-radius: 2px;
+      .hud-wheel-key {
+        min-width: 2.4ch;
+        padding: 2px 6px;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        opacity: 0.6;
+      }
+      .hud-wheel-key-on {
+        opacity: 1;
+        color: #16181c;
+        border-color: #6fd3ff;
         background: #6fd3ff;
+      }
+      /* Finish attempt: the one thing that ends an attempt, so it is on screen
+         the whole time one is being driven. */
+      #finish {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+      }
+      .finish-button {
+        font: inherit;
+        font-size: 14px;
+        letter-spacing: 0.06em;
+        color: #16181c;
+        background: #9be36f;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 5px;
+        padding: 8px 20px;
+        cursor: pointer;
+      }
+      .finish-button:hover:not(:disabled) {
+        background: #b3ef8e;
+      }
+      .finish-button:disabled {
+        color: rgba(230, 230, 230, 0.5);
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.2);
+        cursor: default;
+      }
+      .finish-hint {
+        opacity: 0.6;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      }
+      #controls button.controls-on {
+        border-color: #6fd3ff;
+        color: #6fd3ff;
       }
       .hud-scenario {
         opacity: 0.8;
@@ -504,6 +550,7 @@
     <div id="replay"></div>
     <div id="select"></div>
     <div id="controls"></div>
+    <div id="finish"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

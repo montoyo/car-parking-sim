@@ -144,16 +144,27 @@ describe('scoring', () => {
     expect(card.contacts[0]?.severity).toBe('knock');
   });
 
-  it('counts shunts as the gear changes the run emitted', () => {
+  it('counts a shunt each time the car goes the other way', () => {
     const result = drive(createWorld('parallel-park'), [
       { seconds: 0.5, input: { gear: 'forward' } },
       { seconds: 0.5, input: { gear: 'reverse' } },
       { seconds: 0.5, input: { gear: 'forward' } },
       { seconds: 0.5, input: { gear: 'neutral', brake: 1 } },
     ]);
-    const gearChanges = eventsOfKind(result.events, 'gearChange');
-    expect(gearChanges).toHaveLength(4);
-    expect(score(result).shunts).toBe(gearChanges.length);
+    expect(eventsOfKind(result.events, 'gearChange')).toHaveLength(4);
+    // Four gear changes, but only two reversals: neutral is not a shunt.
+    expect(score(result).shunts).toBe(2);
+  });
+
+  it('does not count passing through neutral as a shunt', () => {
+    // Which is what EV mode does every time the player lifts off the key.
+    const result = drive(createWorld('parallel-park'), [
+      { seconds: 0.4, input: { gear: 'forward' } },
+      { seconds: 0.4, input: { gear: 'neutral', brake: 1 } },
+      { seconds: 0.4, input: { gear: 'forward' } },
+      { seconds: 0.4, input: { gear: 'neutral', brake: 1 } },
+    ]);
+    expect(score(result).shunts).toBe(0);
   });
 
   it("sums the breakdown's parts to the total", () => {
@@ -200,8 +211,9 @@ const KNOWN_GOOD_PARALLEL_PARK = [
   // Straighten up and creep forward to sit centrally between the two cars.
   { seconds: 2.15, input: { gear: 'reverse' as const, brake: 1, steer: 0 } },
   { seconds: 1.42, input: { gear: 'forward' as const, steer: 0 } },
-  // Stopped, handbrake set: the player declaring they are done.
-  { seconds: 1, input: { gear: 'forward' as const, brake: 1, handbrake: true } },
+  // Stopped, then the player pressing finish: the declaration they are done.
+  { seconds: 1, input: { gear: 'forward' as const, brake: 1 } },
+  { seconds: 0.1, input: { gear: 'forward' as const, brake: 1, finishRequested: true } },
 ];
 
 describe('the parallel park is completable', () => {

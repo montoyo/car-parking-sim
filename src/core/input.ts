@@ -14,6 +14,12 @@ export interface ControlInput {
   readonly brake: number;
   readonly handbrake: boolean;
   readonly gear: Gear;
+  /**
+   * The player declaring the attempt over. Its own channel rather than something
+   * inferred from the pose: the attempt ends when the DRIVER says it does, and a
+   * car sitting still is not a statement about anything.
+   */
+  readonly finishRequested: boolean;
 }
 
 export const NEUTRAL_INPUT: ControlInput = {
@@ -22,6 +28,7 @@ export const NEUTRAL_INPUT: ControlInput = {
   brake: 0,
   handbrake: false,
   gear: 'neutral',
+  finishRequested: false,
 };
 
 export function clamp(value: number, min: number, max: number): number {
@@ -36,5 +43,6 @@ export function sanitiseInput(input: ControlInput): ControlInput {
     brake: clamp(input.brake, 0, 1),
     handbrake: input.handbrake,
     gear: input.gear,
+    finishRequested: input.finishRequested,
   };
 }

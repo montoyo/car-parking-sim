@@ -125,9 +125,9 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
   events.push(...kerb.events);
 
   // --- Is the attempt over? -----------------------------------------------
-  // The player declares they are finished by parking properly — stationary with
-  // the handbrake set, or simply held stopped past the dwell time — so completion
-  // is read off the same state and the same contact stream as everything else.
+  // The player declares they are finished on their own channel of the input, so
+  // completion is decided by the driver rather than guessed from the pose. The
+  // contact stream is the same one everything else reads.
   const contactEvents = events.filter((e): e is ContactEvent => e.kind === 'contact');
   const vehicle = {
     pose,
@@ -148,7 +148,7 @@ export function step(world: WorldState, rawInput: ControlInput, dt: number): Ste
     vehicle,
     world.scenario,
     contactEvents,
-    input.handbrake,
+    input.finishRequested,
     tick,
     time,
     dt,

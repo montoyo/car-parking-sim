@@ -34,6 +34,12 @@ export interface ActionSpec {
   /** Heading the on-screen reference files this action under. */
   readonly group: string;
   readonly label: string;
+  /**
+   * How the action reads in EV mode, where W and S are directions rather than a
+   * throttle and a brake and the gear selector does nothing at all. `null` means
+   * the action has no effect in that mode and the reference greys it out.
+   */
+  readonly evLabel?: string | null;
   /** Fixed keys (menu and replay chrome) are shown but not rebindable. */
   readonly remappable: boolean;
   readonly defaults: readonly string[];
@@ -47,14 +53,14 @@ export interface ActionSpec {
  * a lookup rather than a translation table.
  */
 export const ACTION_SPECS: readonly ActionSpec[] = [
-  { id: 'throttle', scope: 'drive', group: 'Driving', label: 'throttle', remappable: true, defaults: ['ArrowUp', 'KeyW'] },
-  { id: 'brake', scope: 'drive', group: 'Driving', label: 'brake', remappable: true, defaults: ['ArrowDown', 'KeyS'] },
+  { id: 'throttle', scope: 'drive', group: 'Driving', label: 'throttle', evLabel: 'hold to go forward', remappable: true, defaults: ['ArrowUp', 'KeyW'] },
+  { id: 'brake', scope: 'drive', group: 'Driving', label: 'brake', evLabel: 'hold to go backward', remappable: true, defaults: ['ArrowDown', 'KeyS'] },
   { id: 'steerLeft', scope: 'drive', group: 'Driving', label: 'steer left', remappable: true, defaults: ['ArrowLeft', 'KeyA'] },
   { id: 'steerRight', scope: 'drive', group: 'Driving', label: 'steer right', remappable: true, defaults: ['ArrowRight', 'KeyD'] },
   { id: 'handbrake', scope: 'drive', group: 'Driving', label: 'handbrake', remappable: true, defaults: ['Space'] },
-  { id: 'gearForward', scope: 'drive', group: 'Driving', label: 'gear: drive', remappable: true, defaults: ['KeyF', 'Digit1'] },
-  { id: 'gearNeutral', scope: 'drive', group: 'Driving', label: 'gear: neutral', remappable: true, defaults: ['KeyN', 'Digit2'] },
-  { id: 'gearReverse', scope: 'drive', group: 'Driving', label: 'gear: reverse', remappable: true, defaults: ['KeyR', 'Digit3'] },
+  { id: 'gearForward', scope: 'drive', group: 'Driving', label: 'gear: drive', evLabel: null, remappable: true, defaults: ['KeyF', 'Digit1'] },
+  { id: 'gearNeutral', scope: 'drive', group: 'Driving', label: 'gear: neutral', evLabel: null, remappable: true, defaults: ['KeyN', 'Digit2'] },
+  { id: 'gearReverse', scope: 'drive', group: 'Driving', label: 'gear: reverse', evLabel: null, remappable: true, defaults: ['KeyR', 'Digit3'] },
 
   { id: 'lookLeft', scope: 'drive', group: 'Head', label: 'shoulder check left', remappable: true, defaults: ['KeyQ'] },
   { id: 'lookRight', scope: 'drive', group: 'Head', label: 'shoulder check right', remappable: true, defaults: ['KeyE'] },
@@ -69,6 +75,7 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
   { id: 'aimRight', scope: 'drive', group: 'Mirrors', label: 'aim right', remappable: true, defaults: ['KeyL'] },
   { id: 'mirrorReset', scope: 'drive', group: 'Mirrors', label: 'reset aim', remappable: true, defaults: ['KeyO'] },
 
+  { id: 'finishAttempt', scope: 'drive', group: 'Session', label: 'finish the attempt', remappable: true, defaults: ['Enter'] },
   { id: 'restart', scope: 'global', group: 'Session', label: 'restart scenario', remappable: true, defaults: ['Backspace'] },
   { id: 'menuToggle', scope: 'global', group: 'Session', label: 'scenario menu', remappable: true, defaults: ['KeyP'] },
   { id: 'controlsToggle', scope: 'global', group: 'Session', label: 'this control reference', remappable: true, defaults: ['KeyH'] },

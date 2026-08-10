@@ -23,6 +23,7 @@ import {
   frameIndexForTick,
   gearChangeMarkers,
   replayMarkers,
+  shuntCount,
   wheelTrace,
 } from '../src/core/index';
 import { driveRecorded, eventsOfKind, score } from './helpers/drive';
@@ -57,7 +58,7 @@ const CLEAN_PARK = [
   { seconds: 3.2, input: { gear: 'reverse' as const, steer: 1 } },
   { seconds: 2.15, input: { gear: 'reverse' as const, brake: 1, steer: 0 } },
   { seconds: 1.42, input: { gear: 'forward' as const, steer: 0 } },
-  { seconds: 1, input: { gear: 'forward' as const, brake: 1, handbrake: true } },
+  { seconds: 1, input: { gear: 'forward' as const, brake: 1, finishRequested: true } },
 ];
 
 function distance(a: Vec2, b: Vec2): number {
@@ -119,12 +120,12 @@ describe('recording an attempt', () => {
     expect(Math.min(...apart)).toBeGreaterThan(VEHICLE.wheelbase - 0.01);
   });
 
-  it('marks each gear change at the point on the trace it was made', () => {
+  it('marks each shunt at the point on the trace it was made', () => {
     const { result, recording } = driveRecorded(createWorld('parallel-park'), CLEAN_PARK);
-    const changes = eventsOfKind(result.events, 'gearChange');
     const markers = gearChangeMarkers(recording);
 
-    expect(markers).toHaveLength(changes.length);
+    // The reversals, not every gear change: selecting neutral is not a shunt.
+    expect(markers).toHaveLength(shuntCount(result.events));
     expect(markers.length).toBeGreaterThan(0);
     for (const marker of markers) {
       // The marker sits on the frame of its own tick, and at that frame's centre.

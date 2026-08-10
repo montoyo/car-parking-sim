@@ -15,6 +15,8 @@ import type { ActionSpec } from '../input/bindings';
 import { ACTION_SPECS, keyLabel } from '../input/bindings';
 import type { Bindings } from '../input/bindings';
 import type { AudioSettings } from './audio';
+import type { DriveModeSetting } from './drive-mode';
+import { DRIVE_MODE_LABELS } from './drive-mode';
 
 /** The pad layout, stated in the reference because a pad has no labels on screen. */
 const PAD_REFERENCE: readonly string[] = [
@@ -35,6 +37,7 @@ export class ControlsPanel {
     root: HTMLElement,
     private readonly bindings: Bindings,
     private readonly audio: AudioSettings,
+    private readonly driveMode: DriveModeSetting,
   ) {
     this.root = root;
     root.innerHTML =
@@ -59,6 +62,11 @@ export class ControlsPanel {
         this.capturing = null;
         this.draw();
       }
+      if (target.dataset.act === 'drive-mode') {
+        this.driveMode.set(target.dataset.mode === 'gearbox' ? 'gearbox' : 'ev');
+        this.draw();
+        return;
+      }
       if (target.dataset.act === 'mute') {
         this.audio.toggleMuted();
         this.draw();
@@ -77,6 +85,9 @@ export class ControlsPanel {
       if (this.shown) this.draw();
     });
     this.audio.onChange(() => {
+      if (this.shown) this.draw();
+    });
+    this.driveMode.onChange(() => {
       if (this.shown) this.draw();
     });
 
@@ -159,7 +170,20 @@ export class ControlsPanel {
       })
       .join('');
 
+    const modeButtons = (['ev', 'gearbox'] as const)
+      .map(
+        (mode) =>
+          `<button data-act="drive-mode" data-mode="${mode}"${
+            this.driveMode.mode === mode ? ' class="controls-on"' : ''
+          }>${escapeHtml(DRIVE_MODE_LABELS[mode])}</button>`,
+      )
+      .join('');
+
     this.body.innerHTML =
+      '<div class="controls-group controls-mode"><div class="controls-group-name">Drive mode</div>' +
+      `<div class="controls-actions">${modeButtons}` +
+      '<span class="controls-note">EV: no gears — W and S are the directions, and letting go brakes.</span>' +
+      '</div></div>' +
       `<div class="controls-columns">${columns}</div>` +
       '<div class="controls-group controls-pad"><div class="controls-group-name">Gamepad</div>' +
       `<div class="controls-pad-status">${escapeHtml(this.padStatus)}</div>` +
@@ -178,6 +202,11 @@ export class ControlsPanel {
   }
 
   private row(spec: ActionSpec): string {
+    const ev = this.driveMode.mode === 'ev';
+    // In EV mode the gear selector does nothing; saying so beats listing keys
+    // that quietly no longer work.
+    const inert = ev && spec.evLabel === null;
+    const label = ev && spec.evLabel !== undefined && spec.evLabel !== null ? spec.evLabel : spec.label;
     const capturing = this.capturing === spec.id;
     const keys = capturing
       ? '<span class="controls-key controls-capturing">press a key…</span>'
@@ -185,7 +214,12 @@ export class ControlsPanel {
           .codes(spec.id)
           .map((code) => `<span class="controls-key">${escapeHtml(keyLabel(code))}</span>`)
           .join('');
-    const inner = `<span class="controls-label">${escapeHtml(spec.label)}</span>${keys}`;
+    const inner = `<span class="controls-label">${escapeHtml(label)}</span>${keys}`;
+    if (inert) {
+      return `<div class="controls-row controls-fixed">` +
+        `<span class="controls-label">${escapeHtml(spec.label)}</span>` +
+        '<span class="controls-key">EV mode: no gears</span></div>';
+    }
     return spec.remappable
       ? `<button class="controls-row" data-rebind="${spec.id}">${inner}</button>`
       : `<div class="controls-row controls-fixed">${inner}</div>`;

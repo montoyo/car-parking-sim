@@ -7,7 +7,7 @@
  */
 
 import type { SimEvent, WorldState } from './core/index';
-import { FIXED_DT, Recorder, createWorld, resetWorld, scoreAttempt, step } from './core/index';
+import { FIXED_DT, Recorder, canFinish, createWorld, resetWorld, scoreAttempt, step } from './core/index';
 import { Bindings, assertNoDuplicateBindings, keyLabel } from './input/bindings';
 import { combineInputs } from './input/combine';
 import { GamepadAdapter } from './input/gamepad';
@@ -20,6 +20,8 @@ import { AudioSettings } from './ui/audio';
 import { BestScores } from './ui/bests';
 import { ContactCue } from './ui/contact-cue';
 import { ControlsPanel } from './ui/controls-panel';
+import { DriveModeSetting } from './ui/drive-mode';
+import { FinishButton } from './ui/finish-button';
 import { Hud } from './ui/hud';
 import { ReplayScreen } from './ui/replay';
 import type { ScenarioChoice } from './ui/scenario-select';
@@ -41,6 +43,7 @@ function main(): void {
   const replayRoot = document.getElementById('replay');
   const selectRoot = document.getElementById('select');
   const controlsRoot = document.getElementById('controls');
+  const finishRoot = document.getElementById('finish');
   if (
     !(canvas instanceof HTMLCanvasElement) ||
     !hudRoot ||
@@ -48,11 +51,12 @@ function main(): void {
     !cardRoot ||
     !replayRoot ||
     !selectRoot ||
-    !controlsRoot
+    !controlsRoot ||
+    !finishRoot
   ) {
     throw new Error(
-      'Expected #viewport, #hud, #cue, #scorecard, #replay, #select and #controls elements ' +
-        'in the document.',
+      'Expected #viewport, #hud, #cue, #scorecard, #replay, #select, #controls and ' +
+        '#finish elements in the document.',
     );
   }
 
@@ -89,14 +93,18 @@ function main(): void {
     cue.setVolume(state.volume);
   });
 
+  // EV or gearbox, remembered between sessions. The adapters are handed a getter,
+  // so switching it takes effect on the next key press.
+  const driveMode = new DriveModeSetting();
+
   // The control reference IS the remapping screen: one list, generated from the
   // registry, so what it shows is what the adapters listen for.
-  const controls = new ControlsPanel(controlsRoot, bindings, audio);
+  const controls = new ControlsPanel(controlsRoot, bindings, audio, driveMode);
   controls.attach(window);
 
   // Both adapters are handed a getter, not a snapshot, so a rebind takes effect on
   // the next key press rather than on the next reload.
-  const keyboard = new KeyboardAdapter(() => bindings.keyBindings());
+  const keyboard = new KeyboardAdapter(() => bindings.keyBindings(), () => driveMode.mode);
   keyboard.attach(window);
   // The analogue device: stick straight to rack target, triggers to pedals. It
   // produces the same normalised `ControlInput` the keyboard does.
@@ -108,6 +116,18 @@ function main(): void {
   // Mirror aim is a device adapter too: pick a mirror with M, trim it with IJKL.
   const mirrors = new MirrorAimController(() => bindings.mirrorAimBindings());
   mirrors.attach(window);
+
+  /**
+   * The player's declaration that the attempt is over. Latched here rather than
+   * read straight off a key or a click, because the request has to survive until
+   * the next FIXED tick consumes it — a click between two ticks must not be lost,
+   * and it must not be applied twice.
+   */
+  let finishRequested = false;
+  const requestFinish = (): void => {
+    if (current.completion.status === 'driving') finishRequested = true;
+  };
+  const finishButton = new FinishButton(finishRoot, requestFinish);
 
   window.addEventListener('keydown', (e) => {
     // The panels are modal: while one is up its own keys are the ones that matter.
@@ -128,6 +148,11 @@ function main(): void {
     ) {
       renderer.setViewMode(renderer.mode === 'first-person' ? 'top-down' : 'first-person');
     }
+    // The other half of the finish button: same action, same latch.
+    if (bindings.matches('finishAttempt', e.code) && !e.repeat && !replay.visible) {
+      e.preventDefault();
+      requestFinish();
+    }
     // Instant restart: back to the scenario's approach pose, same layout, same
     // tuning, so a botched approach costs nothing but the attempt.
     if (bindings.matches('restart', e.code) && !e.repeat) restart();
@@ -142,6 +167,8 @@ function main(): void {
   /** One frame per fixed tick: the recording the replay plays back. */
   let recorder = new Recorder(current);
   let accumulator = 0;
+  /** The steering target the last tick was given, for the HUD's keycaps. */
+  let steerTarget = 0;
   let lastFrameMs: number | null = null;
   let paused = false;
   const fps = new FrameRateMeter();
@@ -164,6 +191,12 @@ function main(): void {
     previous = current;
     accumulator = 0;
     log = [];
+    finishRequested = false;
+    // The world resets into neutral, so the ADAPTERS have to as well: a keyboard
+    // still holding "reverse" from the last attempt would drive the car straight
+    // back out of the reset pose without the player touching anything.
+    keyboard.reset();
+    gamepad.reset();
     recorder = new Recorder(current);
     scorecard.hide();
     replay.hide();
@@ -179,6 +212,9 @@ function main(): void {
     previous = current;
     accumulator = 0;
     log = [];
+    finishRequested = false;
+    keyboard.reset();
+    gamepad.reset();
     recorder = new Recorder(current);
     scorecard.hide();
     replay.hide();
@@ -215,10 +251,21 @@ function main(): void {
       // driving. Backspace restarts.
       while (accumulator >= FIXED_DT && current.completion.status === 'driving') {
         // Two devices, one normalised input: the core never learns which was used.
-        const input = combineInputs(
-          { input: keyboard.sample(FIXED_DT), gearRequest: keyboard.gearRequest },
+        // EV mode needs the road speed to tell "go the other way" from "stop
+        // first", so the adapter is handed the state the core just produced.
+        const merged = combineInputs(
+          {
+            input: keyboard.sample(FIXED_DT, current.vehicle.longitudinalVelocity),
+            gearRequest: keyboard.gearRequest,
+          },
           padInput === null ? null : { input: padInput, gearRequest: gamepad.gearRequest },
         );
+        // The latch is consumed by exactly one tick, whether or not the core
+        // accepts it — a request the car was still rolling for is a no, not a
+        // standing order that fires the moment it stops.
+        const input = finishRequested ? { ...merged, finishRequested: true } : merged;
+        finishRequested = false;
+        steerTarget = input.steer;
         const result = step(current, input, FIXED_DT);
         previous = current;
         current = result.world;
@@ -271,6 +318,11 @@ function main(): void {
         reversingCamera: current.scenario.reversingCamera,
       });
     }
+    finishButton.update({
+      driving: current.completion.status === 'driving' && !select.visible && !controls.visible,
+      ready: canFinish(current.vehicle, current.scenario),
+      key: keyLabel(bindings.codes('finishAttempt')[0] ?? 'Enter'),
+    });
     hud.update(current, {
       fps: smoothedFps,
       pointerLocked: look.locked,
@@ -279,6 +331,12 @@ function main(): void {
       audio: audio.describe(),
       controlsKey: keyLabel(bindings.codes('controlsToggle')[0] ?? 'KeyH'),
       gamepad: gamepad.connected,
+      evMode: driveMode.mode === 'ev',
+      steerInput: steerTarget,
+      steerKeys: {
+        left: keyLabel(bindings.codes('steerLeft')[0] ?? 'ArrowLeft'),
+        right: keyLabel(bindings.codes('steerRight')[0] ?? 'ArrowRight'),
+      },
     });
   };
 

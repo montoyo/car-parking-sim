@@ -169,9 +169,26 @@ export function scoredContacts(events: readonly SimEvent[]): readonly ScoredCont
   return [...byKey.values()];
 }
 
-/** Gear changes are shunts: the number of times the player changed direction. */
+/**
+ * A shunt is a REVERSAL: the number of times the car went the other way.
+ *
+ * Not simply the number of gear changes, because passing through neutral is not
+ * a shunt — a driver who selects neutral at a standstill and then drive again has
+ * shunted nothing, and in EV mode (where lifting off IS neutral) counting gear
+ * changes would score a shunt every time the player let go of the key. So the
+ * neutrals are dropped and what is counted is the direction actually flipping.
+ */
 export function shuntCount(events: readonly SimEvent[]): number {
-  return events.filter((e): e is GearChangeEvent => e.kind === 'gearChange').length;
+  let previous: 'forward' | 'reverse' | null = null;
+  let shunts = 0;
+  for (const event of events) {
+    if (event.kind !== 'gearChange') continue;
+    const to = (event as GearChangeEvent).to;
+    if (to === 'neutral') continue;
+    if (previous !== null && previous !== to) shunts += 1;
+    previous = to;
+  }
+  return shunts;
 }
 
 /** Offsets of the car's centre from the bay's centre, in the BAY's own frame (m). */

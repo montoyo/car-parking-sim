@@ -28,7 +28,7 @@ function attempt(parameters: Record<string, number>): ReturnType<typeof scoreAtt
   const world = createWorld('tight-kerb', { parameters });
   const result = drive(world, [
     { seconds: 1.5, input: { gear: 'reverse' } },
-    { seconds: 2, input: { gear: 'neutral', brake: 1, handbrake: true } },
+    { seconds: 2, input: { gear: 'neutral', brake: 1, finishRequested: true } },
   ]);
   return scoreAttempt(result.world, result.events);
 }

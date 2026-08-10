@@ -90,9 +90,9 @@ export {
   INITIAL_COMPLETION,
   STATIONARY_SPEED,
   STATIONARY_YAW_RATE,
-  COMPLETION_DWELL_SECONDS,
   UNDER_WAY_SPEED,
   isStationary,
+  canFinish,
   updateCompletion,
 } from './completion';
 

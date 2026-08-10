@@ -1,33 +1,27 @@
 /**
  * When an attempt is over.
  *
- * The player declares they are finished by PARKING PROPERLY, not by pressing a
- * "finish" button: the attempt completes when the car is stationary with the
- * handbrake set, or when it has simply been held stopped past a dwell time. That
- * is the whole interaction — scoring (see `scoring.ts`) then decides whether the
- * place they stopped in is any good, which is a separate question from whether
- * they are done.
+ * The player declares they are finished EXPLICITLY — `finishRequested` on the
+ * control input, which the UI raises from a "finish attempt" button (or its key).
+ * Nothing about the pose ends an attempt on the player's behalf: a car sitting
+ * still with the handbrake on is a driver thinking about the next shunt just as
+ * often as it is a driver who is done, and guessing between those two took the
+ * decision away from the person making it. Scoring (see `scoring.ts`) then decides
+ * whether the place they stopped in is any good, which is a separate question from
+ * whether they are done.
  *
- * Two guards keep that from firing at the wrong moment:
+ * Two guards keep the declaration from being nonsense:
  *
- * 1. The car must have MOVED first. A world starts stationary with no handbrake,
- *    so without this the dwell timer would end the attempt before the player has
- *    touched a pedal.
+ * 1. The car must be STATIONARY. Finishing is parking, and a car still rolling is
+ *    not parked; `canFinish` is exported so the button can grey itself out for the
+ *    same reason rather than by a rule of its own.
  * 2. The scenario must have a bay. The debug plane is a fixture for vehicle-model
  *    tests, not an attempt at anything, so nothing there ever completes.
- *
- * And the DWELL path additionally wants the car to be at least in the bay: a
- * player who stops in the middle of the road to think about the next shunt has not
- * finished, whereas one who rolls into the bay and takes their hands off the wheel
- * plainly has. Setting the handbrake needs no such qualification — that is the
- * player declaring they are done, and being declared done in a hopeless position
- * is exactly what the pass gates are for.
  *
  * The state is latched: once an attempt is complete or failed it stays that way,
  * and the `scenarioComplete` / `scenarioFailed` event is emitted exactly once.
  */
 
-import { bodyCentre, pointInConvex } from './collision';
 import type { ContactEvent, SimEvent } from './events';
 import type { Scenario } from './scenario';
 import type { VehicleState } from './world';
@@ -36,8 +30,6 @@ import type { VehicleState } from './world';
 export const STATIONARY_SPEED = 0.08;
 /** Yaw rate (rad/s) below which the car counts as stationary. */
 export const STATIONARY_YAW_RATE = 0.06;
-/** Seconds the car must be held stopped to complete without the handbrake. */
-export const COMPLETION_DWELL_SECONDS = 2.5;
 /**
  * Speed (m/s) the car must have exceeded at some point for the attempt to be
  * considered under way. Well above `STATIONARY_SPEED`, and below idle creep.
@@ -81,6 +73,14 @@ export function isStationary(vehicle: VehicleState): boolean {
   );
 }
 
+/**
+ * Whether pressing "finish attempt" right now would end the attempt. The button
+ * asks this so that what it offers and what the core will accept are one rule.
+ */
+export function canFinish(vehicle: VehicleState, scenario: Scenario): boolean {
+  return scenario.bay !== null && isStationary(vehicle);
+}
+
 export interface CompletionUpdate {
   readonly completion: CompletionState;
   readonly events: readonly SimEvent[];
@@ -96,7 +96,7 @@ export function updateCompletion(
   vehicle: VehicleState,
   scenario: Scenario,
   contacts: readonly ContactEvent[],
-  handbrake: boolean,
+  finishRequested: boolean,
   tick: number,
   time: number,
   dt: number,
@@ -123,13 +123,9 @@ export function updateCompletion(
   const stillSeconds = still ? previous.stillSeconds + dt : 0;
   const driving: CompletionState = { ...previous, underWay, stillSeconds };
 
-  if (scenario.bay === null || !underWay || !still) return { completion: driving, events: [] };
-
-  // Handbrake set is the player saying "done"; the dwell is the same statement
-  // made by a driver who leaves it in gear on the brake and takes their hands off.
-  const inBay = pointInConvex(bodyCentre(vehicle.pose), scenario.bay.polygon);
-  const declared = handbrake || (inBay && stillSeconds >= COMPLETION_DWELL_SECONDS);
-  if (!declared) return { completion: driving, events: [] };
+  if (!finishRequested || !canFinish(vehicle, scenario)) {
+    return { completion: driving, events: [] };
+  }
 
   return {
     completion: { ...driving, status: 'complete', endedTick: tick, endedTime: time },

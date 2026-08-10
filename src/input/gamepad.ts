@@ -81,6 +81,7 @@ export function padControlInput(pad: PadSnapshot, gear: Gear): ControlInput {
     brake: padPedal(pad.buttons[PAD_MAPPING.brakeButton]),
     handbrake: pressed(pad, PAD_MAPPING.handbrakeButton),
     gear,
+    finishRequested: false,
   });
 }
 
@@ -137,6 +138,12 @@ export class GamepadAdapter {
     this.active = padActive(pad) || request !== null;
 
     return padControlInput(pad, this.gear);
+  }
+
+  /** Forget the selected gear, so a restart begins in neutral. */
+  reset(): void {
+    this.gear = 'neutral';
+    this.previousGearRequest = null;
   }
 
   /** Whether a pad is plugged in, for the control reference to say so. */

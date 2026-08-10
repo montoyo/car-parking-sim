@@ -269,13 +269,23 @@ export const VEHICLE: VehicleDefinition = {
   mirrors: {
     // Mount points are set relative to the eye the way a real car's are: the
     // interior mirror about 0.6 m ahead and up at the top of the screen, the door
-    // mirrors nearly a metre ahead and standing 17 cm off the flank — which is
-    // what puts them in the driver's field of view at all, why the passenger-side
-    // one needs a deliberate glance, and what stands the reflected eye far enough
-    // outboard to see the car's own flank instead of the inside of the bodywork. Each normal bisects the line of sight from
-    // `driverEyePoint` to the glass and the direction the mirror shows. Interior: straight back, tipped a
-    // little down. Wings: back down their own flank, angled out far enough to
-    // clear the body and down enough to put the kerb in the bottom of the glass.
+    // mirrors standing off the flank — which is what puts them in the driver's
+    // field of view at all, why the passenger-side one needs a deliberate glance,
+    // and what stands the reflected eye far enough outboard to see the car's own
+    // flank instead of the inside of the bodywork.
+    //
+    // The wings sit BEHIND the base of the windscreen (x < the A-pillar's 0.95)
+    // and high enough to clear the door sill, because a door mirror the driver
+    // cannot actually see is not a mirror. Mounted ahead of the pillar they were
+    // geometrically perfect and entirely hidden by it — the sight line from the
+    // eye ran straight through the pillar box — which is exactly the blind spot a
+    // real car's mirror placement is designed to avoid. Change these numbers and
+    // the cockpit shell's pillar and sill in `render/cockpit.ts` together.
+    //
+    // Each normal bisects the line of sight from `driverEyePoint` to the glass
+    // and the direction the mirror shows. Interior: straight back, tipped a little
+    // down. Wings: back down their own flank, angled out far enough to clear the
+    // body and down enough to put the kerb in the bottom of the glass.
     interior: {
       mount: { x: 0.86, y: 0.02, z: 1.3 },
       normal: { x: 0.9476, y: -0.2912, z: 0.1312 },
@@ -284,15 +294,15 @@ export const VEHICLE: VehicleDefinition = {
       convexRadius: null,
     },
     wingLeft: {
-      mount: { x: 1.05, y: 1.08, z: 0.98 },
-      normal: { x: 0.9457, y: 0.3226, z: -0.0389 },
+      mount: { x: 0.5, y: 1.02, z: 1.1 },
+      normal: { x: 0.8297, y: 0.5579, z: -0.0199 },
       width: 0.17,
       height: 0.1,
       convexRadius: 1.2,
     },
     wingRight: {
-      mount: { x: 1.05, y: -1.08, z: 0.98 },
-      normal: { x: 0.8835, y: -0.4682, z: 0.0147 },
+      mount: { x: 0.5, y: -1.02, z: 1.1 },
+      normal: { x: 0.7539, y: -0.6569, z: 0.0096 },
       width: 0.17,
       height: 0.1,
       convexRadius: 1.2,
