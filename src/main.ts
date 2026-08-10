@@ -255,7 +255,11 @@ function main(): void {
         // first", so the adapter is handed the state the core just produced.
         const merged = combineInputs(
           {
-            input: keyboard.sample(FIXED_DT, current.vehicle.longitudinalVelocity),
+            input: keyboard.sample(
+              FIXED_DT,
+              current.vehicle.longitudinalVelocity,
+              current.vehicle.rack,
+            ),
             gearRequest: keyboard.gearRequest,
           },
           padInput === null ? null : { input: padInput, gearRequest: gamepad.gearRequest },

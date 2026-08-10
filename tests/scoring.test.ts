@@ -199,17 +199,17 @@ describe('scoring', () => {
  */
 const KNOWN_GOOD_PARALLEL_PARK = [
   // Wind on full right lock against the brake, as a driver does before moving.
-  { seconds: 2.3, input: { gear: 'reverse' as const, brake: 1, steer: -1 } },
+  { seconds: 1.2, input: { gear: 'reverse' as const, brake: 1, steer: -1 } },
   // Reverse on full lock until the car sits at about 38 degrees to the kerb.
-  { seconds: 3.16, input: { gear: 'reverse' as const, steer: -1 } },
+  { seconds: 2.9, input: { gear: 'reverse' as const, steer: -1 } },
   // Straighten the wheel, then reverse straight to bring the tail into the gap.
-  { seconds: 2.16, input: { gear: 'reverse' as const, brake: 1, steer: 0 } },
-  { seconds: 1.71, input: { gear: 'reverse' as const, steer: 0 } },
+  { seconds: 1.2, input: { gear: 'reverse' as const, brake: 1, steer: 0 } },
+  { seconds: 2, input: { gear: 'reverse' as const, steer: 0 } },
   // Full left lock, and reverse again to bring the nose in past the car ahead.
-  { seconds: 2.19, input: { gear: 'reverse' as const, brake: 1, steer: 1 } },
-  { seconds: 3.2, input: { gear: 'reverse' as const, steer: 1 } },
+  { seconds: 1.2, input: { gear: 'reverse' as const, brake: 1, steer: 1 } },
+  { seconds: 2.9, input: { gear: 'reverse' as const, steer: 1 } },
   // Straighten up and creep forward to sit centrally between the two cars.
-  { seconds: 2.15, input: { gear: 'reverse' as const, brake: 1, steer: 0 } },
+  { seconds: 1.2, input: { gear: 'reverse' as const, brake: 1, steer: 0 } },
   { seconds: 1.42, input: { gear: 'forward' as const, steer: 0 } },
   // Stopped, then the player pressing finish: the declaration they are done.
   { seconds: 1, input: { gear: 'forward' as const, brake: 1 } },

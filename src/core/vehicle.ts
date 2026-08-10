@@ -223,8 +223,8 @@ export const VEHICLE: VehicleDefinition = {
   frontWeightFraction: 0.53,
 
   maxSteerAngle: 0.58,
-  rackLockToLockSeconds: 2.4,
-  rackLockToLockSecondsStationary: 4.6,
+  rackLockToLockSeconds: 1.2,
+  rackLockToLockSecondsStationary: 2.3,
   rackRollingSpeed: 0.6,
 
   tyre: {
@@ -238,10 +238,14 @@ export const VEHICLE: VehicleDefinition = {
   },
 
   drivetrain: {
-    peakTorque: 200,
-    peakTorqueSpeed: 300,
-    idleSpeed: 80,
-    maxSpeed: 600,
+    // Torques are deliberately half of what a car this size would make, and the
+    // engine speeds half of a real one's, so the car both accelerates gently and
+    // runs out of revs at half the top speed. Parking wants patience, not shove.
+    peakTorque: 100,
+    peakTorqueSpeed: 150,
+    idleSpeed: 40,
+    maxSpeed: 300,
+    // Creep is left alone: it is the parking crawl, not acceleration.
     idleTorque: 45,
     creepFadeSpeed: 1.6,
     // Combined single-speed automatic + final drive. Reverse is geared lower.
@@ -251,7 +255,7 @@ export const VEHICLE: VehicleDefinition = {
   },
 
   brakes: {
-    maxTorque: 4800,
+    maxTorque: 2400,
     frontBias: 0.62,
     handbrakeTorque: 1800,
   },

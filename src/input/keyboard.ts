@@ -1,7 +1,7 @@
 /**
  * Keyboard adapter: turns key state into a `ControlInput`.
  *
- * The adapter — not the core — owns steering wind-on and self-centre ramping, so
+ * The adapter — not the core — owns steering wind-on and hold, so
  * that an analogue device (gamepad, ticket 13) can map its axis straight to the
  * rack target and the core sees the same shape from both. It also owns the two
  * DRIVE MODES, for the same reason: an EV's single go-pedal and an automatic's
@@ -20,14 +20,16 @@
  */
 
 import type { ControlInput, Gear } from '../core/index';
-import { clamp } from '../core/index';
+import { clamp, rackRate } from '../core/index';
 import { DEFAULT_BINDING_SET, keyBindingsFrom } from './bindings';
 import { nextInputRequest } from './request';
 
-/** Rate at which held left/right winds the target on, in units of [-1,1] per second. */
-const WIND_ON_RATE = 1.6;
-/** Rate at which an unheld target returns to centre. */
-const SELF_CENTRE_RATE = 2.4;
+/**
+ * Rate at which held left/right winds the target on, in units of [-1,1] per second.
+ * Comfortably above the rack's own rate: the RACK is what limits how fast the wheel
+ * turns, and this only has to keep the target ahead of it.
+ */
+const WIND_ON_RATE = 3.2;
 /** Pedal ramp rates so keyboard throttle/brake are not on/off. */
 const PEDAL_ON_RATE = 4.0;
 const PEDAL_OFF_RATE = 6.0;
@@ -159,7 +161,7 @@ export class KeyboardAdapter {
    * `roadSpeed` is the car's signed longitudinal velocity (m/s), which EV mode
    * needs to tell "go the other way" from "stop first". Gearbox mode ignores it.
    */
-  sample(dt: number, roadSpeed = 0): ControlInput {
+  sample(dt: number, roadSpeed = 0, rack = this.steer): ControlInput {
     const bindings = this.bindings;
     const left = this.any(bindings.steerLeft);
     const right = this.any(bindings.steerRight);
@@ -167,10 +169,17 @@ export class KeyboardAdapter {
 
     if (steerDir !== 0) {
       this.steer = clamp(this.steer + steerDir * WIND_ON_RATE * dt, -1, 1);
-    } else {
-      const decay = SELF_CENTRE_RATE * dt;
-      this.steer = Math.abs(this.steer) <= decay ? 0 : this.steer - Math.sign(this.steer) * decay;
     }
+    // Letting go of both keys HOLDS the lock. A keyboard has no wheel to let slip
+    // through your hands, so self-centring would silently undo the player's input.
+    //
+    // The target is never allowed to run more than one tick's rack travel ahead of
+    // where the rack ACTUALLY is. Without this the target sprints to full lock in a
+    // fraction of a second and the rack spends the next second or more crawling
+    // after it — so the wheel keeps turning long after the key came up, which reads
+    // as input lag. Pegged to the rack, releasing the key stops the wheel that tick.
+    const lead = rackRate(roadSpeed) * dt;
+    this.steer = clamp(this.steer, rack - lead, rack + lead);
 
     const forwardKey = this.any(bindings.throttle);
     const backwardKey = this.any(bindings.brake);

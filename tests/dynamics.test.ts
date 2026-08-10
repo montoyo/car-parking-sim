@@ -66,7 +66,7 @@ describe('the crawl regime', () => {
     // kinematic-to-dynamic threshold during this run.
     const result = hold(createWorld('debug-plane'), 8, {
       gear: 'forward',
-      throttle: 0.25,
+      throttle: 0.5,
       steer: 0.5,
     });
 
@@ -176,8 +176,8 @@ describe('the brakes', () => {
 
     // The handbrake acts on the rear wheels only: they are stopped, the fronts
     // are merely not being driven.
-    expect(secured.world.vehicle.wheels.rearLeft.spinRate).toBe(0);
-    expect(secured.world.vehicle.wheels.rearRight.spinRate).toBe(0);
+    expect(Math.abs(secured.world.vehicle.wheels.rearLeft.spinRate)).toBeLessThan(1e-9);
+    expect(Math.abs(secured.world.vehicle.wheels.rearRight.spinRate)).toBeLessThan(1e-9);
   });
 
   it('never lets go once the car has stopped under the brakes', () => {
@@ -226,19 +226,22 @@ describe('weight transfer', () => {
 });
 
 describe('grip limits', () => {
-  it('produces measurable rear slip when the throttle is abused', () => {
+  it('loads the rear tyres up, but not past their grip, when the throttle is abused', () => {
     const gentle = hold(createWorld('debug-plane'), 2, { gear: 'forward', throttle: 0.1, steer: 1 });
     const abused = hold(createWorld('debug-plane'), 2, { gear: 'forward', throttle: 1, steer: 1 });
 
-    expect(gentle.world.vehicle.wheels.rearLeft.slipRatio).toBeLessThan(0.1);
-    // Wheelspin: the driven wheels are turning far faster than the road.
-    expect(abused.world.vehicle.wheels.rearLeft.slipRatio).toBeGreaterThan(0.5);
+    expect(gentle.world.vehicle.wheels.rearLeft.slipRatio).toBeLessThan(0.01);
+    // Slip grows with the torque asked of the tyre — an order of magnitude here.
+    expect(abused.world.vehicle.wheels.rearLeft.slipRatio).toBeGreaterThan(
+      gentle.world.vehicle.wheels.rearLeft.slipRatio * 5,
+    );
     // And it is the DRIVEN wheels that slip, not the fronts.
-    expect(abused.world.vehicle.wheels.frontLeft.slipRatio).toBeLessThan(0.1);
-    // Spinning up means the tyre is past the peak of its curve: it is using
-    // most of the grip available and delivering less than it would at the peak.
-    expect(abused.world.vehicle.wheels.rearLeft.gripUtilisation).toBeGreaterThan(0.6);
+    expect(Math.abs(abused.world.vehicle.wheels.frontLeft.slipRatio)).toBeLessThan(0.01);
+    // The engine is deliberately tuned so full throttle CANNOT break traction:
+    // it draws most of the grip budget and stops short of the peak of the curve.
+    expect(abused.world.vehicle.wheels.rearLeft.gripUtilisation).toBeGreaterThan(0.5);
     expect(abused.world.vehicle.wheels.rearLeft.gripUtilisation).toBeLessThan(1);
+    expect(abused.world.vehicle.wheels.rearLeft.slipRatio).toBeLessThan(VEHICLE.tyre.peakSlipRatio);
   });
 
   it('never lets a wheel exceed the friction circle', () => {
@@ -258,9 +261,10 @@ describe('grip limits', () => {
     }
   });
 
-  it('trades cornering force away for drive force at the same steering angle', () => {
-    // Same rack, same speed band, different throttle: the wheel that is being
-    // asked for drive has less left over to corner with.
+  it('spends more of one grip budget when drive is added at the same steering angle', () => {
+    // Same rack, same starting state, different throttle: drive and cornering
+    // are drawn from the SAME budget, so asking for drive pushes the wheel
+    // further round its friction circle.
     const wound = hold(createWorld('debug-plane'), 4, { gear: 'forward', throttle: 0.3, steer: 1 });
     const coasting = hold(wound.world, 0.5, { gear: 'forward', steer: 1 }).world.vehicle;
     const driving = hold(wound.world, 0.5, { gear: 'forward', throttle: 1, steer: 1 }).world.vehicle;
@@ -268,7 +272,9 @@ describe('grip limits', () => {
     const rearDrive = driving.wheels.rearLeft;
     const rearCoast = coasting.wheels.rearLeft;
     expect(rearDrive.longitudinalForce).toBeGreaterThan(rearCoast.longitudinalForce + 1000);
-    expect(Math.abs(rearDrive.lateralForce)).toBeLessThan(Math.abs(rearCoast.lateralForce));
+    expect(rearDrive.gripUtilisation).toBeGreaterThan(rearCoast.gripUtilisation + 0.2);
+    // The budget is still a budget: neither state is outside the circle.
+    expect(rearDrive.gripUtilisation).toBeLessThan(1);
   });
 });
 

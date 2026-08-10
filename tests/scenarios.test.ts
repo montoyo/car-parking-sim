@@ -45,13 +45,14 @@ const DECLARE_DONE: DriveSegment = {
  */
 const KNOWN_GOOD: Readonly<Record<string, readonly DriveSegment[]>> = {
   'forward-bay': [
-    // Roll up the aisle square, as you would while looking into the bay.
-    { seconds: 1.6, input: { gear: 'forward' } },
-    // One arc at just under full lock swings the nose through the right angle.
-    { seconds: 5.5, input: { gear: 'forward', steer: -0.85 } },
+    // Roll up the aisle square, as you would while looking into the bay, until
+    // the bay mouth is about one turning radius abeam.
+    { seconds: 2.5, input: { gear: 'forward' } },
+    // One arc at full lock swings the nose through the right angle.
+    { seconds: 4.15, input: { gear: 'forward', steer: -1 } },
     // Catch the swing and straighten as the car lines up with the bay.
-    { seconds: 0.7, input: { gear: 'forward', steer: 0.85 } },
-    { seconds: 0.2, input: { gear: 'forward' } },
+    { seconds: 0.8, input: { gear: 'forward', steer: 1 } },
+    { seconds: 0.6, input: { gear: 'forward' } },
     { seconds: 2, input: { gear: 'forward', brake: 1 } },
     DECLARE_DONE,
   ],
@@ -61,7 +62,7 @@ const KNOWN_GOOD: Readonly<Record<string, readonly DriveSegment[]>> = {
     { seconds: 6.05, input: { gear: 'reverse', steer: -1 } },
     // Ease the lock off to run the last of it straight down the bay.
     { seconds: 2.7, input: { gear: 'reverse', steer: 0.2 } },
-    { seconds: 1.9, input: { gear: 'reverse', brake: 0.15 } },
+    { seconds: 1.9, input: { gear: 'reverse', brake: 0.3 } },
     DECLARE_DONE,
   ],
   'angled-echelon': [
@@ -75,16 +76,16 @@ const KNOWN_GOOD: Readonly<Record<string, readonly DriveSegment[]>> = {
   ],
   'tight-kerb': [
     // Wind on full right lock against the brake before moving an inch.
-    { seconds: 1.3, input: { gear: 'reverse', brake: 1, steer: -1 } },
-    { seconds: 3.16, input: { gear: 'reverse', steer: -0.95 } },
+    { seconds: 1.2, input: { gear: 'reverse', brake: 1, steer: -1 } },
+    { seconds: 2.9, input: { gear: 'reverse', steer: -0.95 } },
     // Straighten the wheel, then reverse straight to bring the tail in.
-    { seconds: 1.26, input: { gear: 'reverse', brake: 1, steer: 0 } },
-    { seconds: 1.71, input: { gear: 'reverse', steer: 0 } },
+    { seconds: 1.2, input: { gear: 'reverse', brake: 1, steer: 0 } },
+    { seconds: 2.2, input: { gear: 'reverse', steer: 0 } },
     // Full left lock to swing the nose in past the car ahead.
-    { seconds: 2.19, input: { gear: 'reverse', brake: 1, steer: 0.95 } },
-    { seconds: 3, input: { gear: 'reverse', steer: 1 } },
+    { seconds: 1.2, input: { gear: 'reverse', brake: 1, steer: 0.95 } },
+    { seconds: 2.7, input: { gear: 'reverse', steer: 1 } },
     // Straighten up and creep forward to sit centrally in the gap.
-    { seconds: 2, input: { gear: 'reverse', brake: 1, steer: 0 } },
+    { seconds: 1.2, input: { gear: 'reverse', brake: 1, steer: 0 } },
     { seconds: 1.37, input: { gear: 'forward', steer: 0 } },
     DECLARE_DONE,
   ],
