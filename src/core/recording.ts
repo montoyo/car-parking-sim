@@ -130,6 +130,62 @@ export class Recorder {
   }
 }
 
+/**
+ * Below this the car is standing still and the rack has not moved: the attempt
+ * has not begun. Loose enough to ignore numerical drift in a stationary car,
+ * tight enough that the first deliberate touch of a pedal or the wheel trips it.
+ */
+const IDLE_EPSILON = 1e-3;
+
+/**
+ * The first frame on which the player did something — moved, turned the wheel, or
+ * selected a gear. The frames before it are the car sitting in the approach pose
+ * while the player reads the scenario, and they are dead air at the head of every
+ * replay: a scrub bar mostly spent on a stationary car, and a clock whose zero is
+ * some arbitrary moment before the manoeuvre.
+ *
+ * Returns 0 for a recording in which nothing ever happened, so a trim is always a
+ * valid recording rather than an empty one.
+ */
+export function firstActionFrame(recording: Recording): number {
+  const frames = recording.frames;
+  const first = frames[0];
+  if (first === undefined) return 0;
+  for (let i = 1; i < frames.length; i++) {
+    const frame = frames[i] as Frame;
+    if (
+      Math.abs(frame.speed) > IDLE_EPSILON ||
+      Math.abs(frame.rack - first.rack) > IDLE_EPSILON ||
+      frame.gear !== first.gear
+    ) {
+      // The frame BEFORE the change is the last moment of the approach pose, so
+      // t = 0 shows the car as it was when the player took hold of it.
+      return i - 1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * The same recording with the dead air at the head cut off and `time` rebased so
+ * t = 0 is the player's first action.
+ *
+ * `tick` is deliberately NOT rebased: it is the identity every event in the log
+ * carries, and renumbering it would break the correspondence between a contact
+ * and the frame it happened on that `frameIndexForTick` depends on. The events
+ * survive whole for the same reason — nothing can happen before the first action,
+ * so nothing is discarded by cutting there.
+ */
+export function trimLeadingIdle(recording: Recording): Recording {
+  const start = firstActionFrame(recording);
+  if (start <= 0) return recording;
+  const origin = (recording.frames[start] as Frame).time;
+  return {
+    ...recording,
+    frames: recording.frames.slice(start).map((frame) => ({ ...frame, time: frame.time - origin })),
+  };
+}
+
 /** The frame at an index, clamped into the recording. */
 export function frameAt(recording: Recording, index: number): Frame {
   const frames = recording.frames;

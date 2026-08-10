@@ -154,7 +154,7 @@ export class ReplayScreen {
     this.referenceButton = requireElement(root, '[data-act="reference"]', HTMLButtonElement);
 
     this.scrub.addEventListener('input', () => {
-      this.playing = false;
+      this.setPlaying(false);
       this.seek(Number(this.scrub.value));
     });
     root.addEventListener('click', (e) => {
@@ -170,7 +170,7 @@ export class ReplayScreen {
       if (act === 'retry') this.onRetry();
       const jump = target.dataset.frame;
       if (jump !== undefined) {
-        this.playing = false;
+        this.setPlaying(false);
         this.seek(Number(jump));
       }
     });
@@ -236,7 +236,7 @@ export class ReplayScreen {
     this.markers = contactMarkers(recording);
     this.gearMarkers = gearChangeMarkers(recording);
     this.index = Math.max(0, recording.frames.length - 1);
-    this.playing = false;
+    this.setPlaying(false);
     this.rateIndex = DEFAULT_RATE_INDEX;
     this.reference = referenceLine(recording.scenario);
     this.setViewMode('top-down');
@@ -249,7 +249,7 @@ export class ReplayScreen {
 
   hide(): void {
     this.recording = null;
-    this.playing = false;
+    this.setPlaying(false);
     this.root.style.display = 'none';
   }
 
@@ -265,8 +265,7 @@ export class ReplayScreen {
       this.index += (elapsedSeconds / FIXED_DT) * this.rate;
       if (this.index >= last) {
         this.index = last;
-        this.playing = false;
-        this.playButton.textContent = 'play';
+        this.setPlaying(false);
       }
       this.scrub.value = String(Math.round(this.index));
     }
@@ -277,14 +276,24 @@ export class ReplayScreen {
     return RATES[this.rateIndex] as number;
   }
 
+  /**
+   * The one place `playing` is written, so the button can never disagree with it.
+   * Scrubbing, frame-stepping and jumping to an event all stop playback, and each
+   * of them used to have to remember to relabel the button separately — the scrub
+   * bar didn't, and left a stopped replay showing "pause".
+   */
+  private setPlaying(playing: boolean): void {
+    this.playing = playing;
+    this.playButton.textContent = playing ? 'pause' : 'play';
+  }
+
   private togglePlay(): void {
     const recording = this.recording;
     if (recording === null) return;
     // Pressing play on the last frame replays from the start, which is what the
     // player wants after landing there straight off a finished attempt.
     if (!this.playing && this.index >= recording.frames.length - 1) this.index = 0;
-    this.playing = !this.playing;
-    this.playButton.textContent = this.playing ? 'pause' : 'play';
+    this.setPlaying(!this.playing);
   }
 
   private cycleRate(direction = 1): void {
@@ -317,8 +326,7 @@ export class ReplayScreen {
   }
 
   private step(frames: number): void {
-    this.playing = false;
-    this.playButton.textContent = 'play';
+    this.setPlaying(false);
     this.seek(Math.round(this.index) + frames);
   }
 

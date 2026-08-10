@@ -1,16 +1,22 @@
 /**
- * The cockpit shell: A-pillars, door frames, roof rails, dashboard and the
- * bonnet edge, as flat-shaded boxes in the vehicle's local frame.
+ * The cockpit shell: A-pillars, door frames, roof rails, dashboard, the bonnet
+ * edge and the rear screen with the boot lid beyond it, as flat-shaded boxes in
+ * the vehicle's local frame.
  *
- * This exists for one reason: the occlusion is part of the difficulty. A driver
+ * This exists for two reasons. The occlusion is part of the difficulty: a driver
  * cannot see the nearside front corner past the A-pillar or the bonnet, and a
  * parking trainer that quietly deleted those blind spots would teach the wrong
- * habits. Every dimension is derived from the shared vehicle definition, so the
- * shell can never drift away from the body the physics uses.
+ * habits. But the surfaces the driver DOES sight along matter just as much — the
+ * bonnet for the front extent and the boot lid for the rear — and a shell that
+ * stopped at the C-pillar left reversing as a blind guess at where the car ends.
+ *
+ * Every dimension is derived from the shared vehicle definition, so the shell can
+ * never drift away from the body the physics uses: the boot lid ends at the same
+ * rear face the collision polygon does.
  */
 
 import type { VehicleDefinition } from '../core/index';
-import { VEHICLE, frontAxleX } from '../core/index';
+import { VEHICLE, frontAxleX, rearAxleX } from '../core/index';
 
 /** A box in vehicle-local coordinates, optionally slanted about the local y axis. */
 export interface CockpitPiece {
@@ -34,6 +40,16 @@ function windowLineZ(v: VehicleDefinition): number {
 /** Top of the bonnet above the road (m) — the reference edge a driver sights along. */
 function bonnetZ(v: VehicleDefinition): number {
   return v.bodyHeight - 0.53;
+}
+
+/**
+ * Top of the boot lid above the road (m). Deliberately just ABOVE the sight line
+ * from the driver's eye to the tail: a deck that sat at bonnet height would be
+ * hidden behind its own leading edge, and the rear extent — the thing the driver
+ * is reversing towards something with — would be invisible again.
+ */
+function deckZ(v: VehicleDefinition): number {
+  return windowLineZ(v) - 0.02;
 }
 
 /**
@@ -73,6 +89,14 @@ export function cockpitShell(v: VehicleDefinition = VEHICLE): readonly CockpitPi
   const roofZ = v.bodyHeight;
   const windowZ = windowLineZ(v);
   const bonnet = bonnetZ(v);
+  // The rear: roof header, then the rear screen dropping to the boot lid, which
+  // runs back to the tail. `tailX` is the body's own rear face, so the deck ends
+  // exactly where the collision polygon does.
+  const tailX = rearAxleX(v) - v.rearOverhang;
+  const cPillarX = -1.55;
+  const rearHeaderX = -1.86;
+  const rearScreenBaseX = -1.95;
+  const deck = deckZ(v);
   // Trim sits just inboard of the bodywork so it reads as interior, not as body.
   const trimY = halfWidth - 0.07;
 
@@ -105,6 +129,32 @@ export function cockpitShell(v: VehicleDefinition = VEHICLE): readonly CockpitPi
       half: { x: 1.1, y: halfWidth - 0.05, z: 0.025 },
       slant: 0,
       colour: TRIM,
+    },
+    // Roof header above the rear screen — the top edge of what a shoulder check
+    // looks out through.
+    {
+      centre: { x: rearHeaderX, y: 0, z: roofZ - 0.05 },
+      half: { x: 0.07, y: halfWidth - 0.05, z: 0.05 },
+      slant: 0,
+      colour: TRIM,
+    },
+    // Boot lid: the whole point of this rear section. This is the surface the
+    // driver sights the car's rear extent along, exactly as the bonnet serves the
+    // front, so it is bodywork and it spans the full width of the car.
+    {
+      centre: { x: (rearScreenBaseX + tailX) / 2, y: 0, z: deck },
+      half: { x: (rearScreenBaseX - tailX) / 2, y: halfWidth - 0.03, z: 0.025 },
+      slant: 0,
+      colour: PAINT,
+    },
+    // The trailing edge, stood a little proud of the deck. Without it the deck
+    // just fades into the road behind and "where does my car stop" stays a guess;
+    // with it there is a hard line across the bottom of the rear screen.
+    {
+      centre: { x: tailX + 0.035, y: 0, z: deck + 0.035 },
+      half: { x: 0.035, y: halfWidth - 0.03, z: 0.045 },
+      slant: 0,
+      colour: PAINT,
     },
   ];
 
@@ -139,8 +189,29 @@ export function cockpitShell(v: VehicleDefinition = VEHICLE): readonly CockpitPi
     });
     // C-pillar and rear quarter, closing the cabin behind the door.
     pieces.push({
-      centre: { x: -1.55, y, z: (windowZ + roofZ) / 2 },
+      centre: { x: cPillarX, y, z: (windowZ + roofZ) / 2 },
       half: { x: 0.1, y: 0.05, z: (roofZ - windowZ) / 2 },
+      slant: 0,
+      colour: TRIM,
+    });
+    // Rear screen side frame, from the boot lid up to the rear header. Only the
+    // two edges are drawn — the aperture between them is glass, and filling it in
+    // would blind the shoulder check this whole section exists to serve.
+    pieces.push(
+      strut(
+        { x: rearScreenBaseX, z: deck + 0.03 },
+        { x: rearHeaderX, z: roofZ - 0.06 },
+        y,
+        0.05,
+        0.05,
+        TRIM,
+      ),
+    );
+    // Rear quarter trim below the screen line, closing the side off behind the
+    // C-pillar so the rear reads as an enclosed boot and not an open frame.
+    pieces.push({
+      centre: { x: (cPillarX + rearScreenBaseX) / 2, y: y + side * 0.03, z: deck - 0.06 },
+      half: { x: Math.abs(cPillarX - rearScreenBaseX) / 2 + 0.1, y: 0.045, z: 0.09 },
       slant: 0,
       colour: TRIM,
     });

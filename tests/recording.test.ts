@@ -19,11 +19,14 @@ import {
   bodyTrace,
   contactMarkers,
   createWorld,
+  FIXED_DT,
+  firstActionFrame,
   frameAt,
   frameIndexForTick,
   gearChangeMarkers,
   replayMarkers,
   shuntCount,
+  trimLeadingIdle,
   wheelTrace,
 } from '../src/core/index';
 import { driveRecorded, eventsOfKind, score } from './helpers/drive';
@@ -182,5 +185,74 @@ describe('recording an attempt', () => {
     const { result, recording } = driveRecorded(createWorld('parallel-park'), CLEAN_PARK);
     expect(contactMarkers(recording)).toHaveLength(0);
     expect(score(result).contacts).toHaveLength(0);
+  });
+});
+
+/** Two seconds of the player reading the scenario before touching anything. */
+const IDLE_HEAD = [{ seconds: 2, input: { gear: 'neutral' as const, brake: 1 } }];
+const IDLE_FRAMES = Math.round(2 / FIXED_DT);
+
+describe('trimming the dead air at the head of a recording', () => {
+  it('finds the frame the player first acted on', () => {
+    const { recording } = driveRecorded(createWorld('parallel-park'), [
+      ...IDLE_HEAD,
+      ...CLEAN_PARK,
+    ]);
+
+    // The frame BEFORE the first input, so t = 0 is the approach pose itself.
+    expect(firstActionFrame(recording)).toBe(IDLE_FRAMES);
+  });
+
+  it('leaves a recording that starts with an action alone', () => {
+    const { recording } = driveRecorded(createWorld('parallel-park'), CLEAN_PARK);
+    expect(firstActionFrame(recording)).toBe(0);
+    expect(trimLeadingIdle(recording)).toBe(recording);
+  });
+
+  it('leaves a recording in which nothing ever happened alone', () => {
+    const { recording } = driveRecorded(createWorld('parallel-park'), IDLE_HEAD);
+    expect(firstActionFrame(recording)).toBe(0);
+    expect(trimLeadingIdle(recording)).toBe(recording);
+  });
+
+  it('drops the idle frames and rebases the clock to the first action', () => {
+    const { recording } = driveRecorded(createWorld('parallel-park'), [
+      ...IDLE_HEAD,
+      ...CLEAN_PARK,
+    ]);
+    const trimmed = trimLeadingIdle(recording);
+
+    expect(trimmed.frames).toHaveLength(recording.frames.length - IDLE_FRAMES);
+    expect(frameAt(trimmed, 0).time).toBe(0);
+    // The car has not moved at the new t = 0: the trim cut dead air, not driving.
+    expect(frameAt(trimmed, 0).pose).toEqual(frameAt(recording, 0).pose);
+    // Every frame keeps its pose and its ABSOLUTE tick — only `time` is rebased,
+    // because the event log's ticks have to keep pointing at the right frames.
+    trimmed.frames.forEach((frame, i) => {
+      const original = frameAt(recording, i + IDLE_FRAMES);
+      expect(frame.tick).toBe(original.tick);
+      expect(frame.pose).toEqual(original.pose);
+      expect(frame.time).toBeCloseTo(original.time - IDLE_FRAMES * FIXED_DT, 9);
+    });
+  });
+
+  it('keeps every event pointing at the frame it happened on', () => {
+    const { recording } = driveRecorded(inTheGap(), [...IDLE_HEAD, ...BOTCHED]);
+    const trimmed = trimLeadingIdle(recording);
+
+    expect(trimmed.events).toEqual(recording.events);
+    const before = contactMarkers(recording);
+    const after = contactMarkers(trimmed);
+    expect(after).toHaveLength(before.length);
+    expect(after.length).toBeGreaterThan(0);
+    after.forEach((marker, i) => {
+      // Same contact, same spot on the trace — just at an index shifted by the cut.
+      expect(marker.key).toBe((before[i] as (typeof before)[number]).key);
+      expect(marker.position).toEqual((before[i] as (typeof before)[number]).position);
+      expect(marker.frameIndex).toBe(
+        (before[i] as (typeof before)[number]).frameIndex - IDLE_FRAMES,
+      );
+      expect(frameAt(trimmed, marker.frameIndex).tick).toBe(marker.tick);
+    });
   });
 });

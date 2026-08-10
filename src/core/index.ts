@@ -124,6 +124,8 @@ export {
   frameOf,
   frameAt,
   frameIndexForTick,
+  firstActionFrame,
+  trimLeadingIdle,
   contactMarkers,
   gearChangeMarkers,
   replayMarkers,

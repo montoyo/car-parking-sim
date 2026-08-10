@@ -35,6 +35,13 @@ export class LookController {
   private free: LookState = LOOK_AHEAD;
   private current: LookState = LOOK_AHEAD;
   private pointerLocked = false;
+  /**
+   * Whether a click may capture the pointer. Off while a screen the player has to
+   * point at is up — the replay, chiefly. A captured pointer there means no cursor
+   * to reach the scrub bar with, and clicking the viewport to get it back would
+   * just take it away again.
+   */
+  private captureEnabled = true;
 
   private readonly bindingsOf: () => LookBindings;
 
@@ -49,6 +56,7 @@ export class LookController {
   /** Attach mouse-look and snap keys. Returns a detach function. */
   attach(canvas: HTMLCanvasElement, keyTarget: Window | HTMLElement = window): () => void {
     const click = (): void => {
+      if (!this.captureEnabled) return;
       void canvas.requestPointerLock();
     };
     const lockChange = (): void => {
@@ -101,6 +109,24 @@ export class LookController {
   /** Whether the pointer is captured — the HUD tells the player to click if not. */
   get locked(): boolean {
     return this.pointerLocked;
+  }
+
+  /**
+   * Allow or forbid capturing the pointer, and release it now if forbidding. One
+   * call covers both halves of handing the cursor back: the release, and not
+   * silently retaking it on the next click.
+   */
+  setCaptureEnabled(enabled: boolean): void {
+    this.captureEnabled = enabled;
+    if (!enabled) this.releasePointer();
+  }
+
+  /** Hand the cursor back to the player. Safe to call when nothing is captured. */
+  releasePointer(): void {
+    if (typeof document.exitPointerLock === 'function' && document.pointerLockElement !== null) {
+      document.exitPointerLock();
+    }
+    this.pointerLocked = false;
   }
 
   private snapTarget(): number | null {

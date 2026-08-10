@@ -7,7 +7,16 @@
  */
 
 import type { SimEvent, WorldState } from './core/index';
-import { FIXED_DT, Recorder, canFinish, createWorld, resetWorld, scoreAttempt, step } from './core/index';
+import {
+  FIXED_DT,
+  Recorder,
+  canFinish,
+  createWorld,
+  resetWorld,
+  scoreAttempt,
+  step,
+  trimLeadingIdle,
+} from './core/index';
 import { Bindings, assertNoDuplicateBindings, keyLabel } from './input/bindings';
 import { combineInputs } from './input/combine';
 import { GamepadAdapter } from './input/gamepad';
@@ -200,6 +209,9 @@ function main(): void {
     recorder = new Recorder(current);
     scorecard.hide();
     replay.hide();
+    // Driving needs the head back, so the click-to-capture the replay switched off
+    // is switched on again here — for both ways into a fresh attempt.
+    look.setCaptureEnabled(true);
   };
 
   /**
@@ -218,6 +230,9 @@ function main(): void {
     recorder = new Recorder(current);
     scorecard.hide();
     replay.hide();
+    // Driving needs the head back, so the click-to-capture the replay switched off
+    // is switched on again here — for both ways into a fresh attempt.
+    look.setCaptureEnabled(true);
   };
 
   /**
@@ -228,8 +243,13 @@ function main(): void {
   const finish = (): void => {
     const card = scoreAttempt(current, log);
     scorecard.show(card, bests.submit(card));
-    // And straight into the top-down replay of the attempt just driven.
-    replay.show(recorder.snapshot());
+    // The replay is a screen to be pointed at, so the cursor goes back to the
+    // player the moment it opens — and stays theirs: a click on the viewport must
+    // not silently recapture it while they are reaching for the scrub bar.
+    look.setCaptureEnabled(false);
+    // And straight into the top-down replay of the attempt just driven, trimmed of
+    // the stationary head so the clock starts at the player's first input.
+    replay.show(trimLeadingIdle(recorder.snapshot()));
   };
 
   const frame = (nowMs: number): void => {
