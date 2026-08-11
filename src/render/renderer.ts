@@ -1,7 +1,7 @@
 /**
- * Raw WebGL2 renderer. Flat-shaded boxes, a gridded ground plane, and a debug
- * top-down camera that follows the car. No textures beyond the grid lines, no
- * shadows, no framework.
+ * Raw WebGL2 renderer. Flat-shaded boxes, a gridded ground plane, a single sun
+ * with a shadow map, and a debug top-down camera that follows the car. No
+ * textures beyond the grid lines, no framework.
  *
  * It reads the SAME vehicle definition the core does — box dimensions come from
  * `VEHICLE`, never from numbers typed in here.
@@ -20,6 +20,11 @@ import {
   reverseCameraActive,
   reverseCameraViewProjection,
 } from './reverse-camera';
+import {
+  SHADOW_MAP_SIZE,
+  SUN_DIRECTION,
+  shadowViewProjection,
+} from './shadow';
 import type { MirrorAimSet, MirrorId } from './mirror';
 import {
   MIRROR_IDS,
@@ -33,29 +38,89 @@ import {
   mirrorsToUpdate,
 } from './mirror';
 
+/**
+ * The sun, as GLSL, from the SAME vector the shadow pass builds its camera out
+ * of — so a face can never be shaded as lit while its shadow says otherwise.
+ */
+const SUN_GLSL = `const vec3 SUN = vec3(${SUN_DIRECTION.x}, ${SUN_DIRECTION.y}, ${SUN_DIRECTION.z});`;
+
+/**
+ * How much of the sun reaches a world point, sampled from the shadow map with a
+ * 3x3 kernel on top of the hardware's own bilinear depth comparison. That is 36
+ * effective taps, which is what turns a 1024-texel map into an edge soft enough
+ * to read as a shadow rather than as a staircase.
+ *
+ * The bias is slope-scaled: a surface almost edge-on to the sun spans many
+ * texels of depth within one texel of area, so a flat bias either lets it
+ * shadow itself or lifts every shadow off its caster. Outside the map's own
+ * footprint there is no information, so the point counts as fully lit — the map
+ * follows the car, and the far end of the car park is not what the driver is
+ * judging a gap against.
+ */
+const SHADOW_GLSL = `
+uniform mat4 uLightViewProjection;
+uniform highp sampler2DShadow uShadowMap;
+const float SHADOW_TEXEL = 1.0 / ${SHADOW_MAP_SIZE}.0;
+
+float sunVisibility(vec3 world, float ndl) {
+  if (ndl <= 0.0) return 0.0;
+  vec4 clip = uLightViewProjection * vec4(world, 1.0);
+  vec3 uv = (clip.xyz / clip.w) * 0.5 + 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || uv.z > 1.0) return 1.0;
+  float slope = clamp(sqrt(1.0 - ndl * ndl) / ndl, 0.0, 4.0);
+  float bias = 0.0006 + 0.0012 * slope;
+  float sum = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 offset = vec2(float(x), float(y)) * SHADOW_TEXEL;
+      sum += texture(uShadowMap, vec3(uv.xy + offset, uv.z - bias));
+    }
+  }
+  return sum / 9.0;
+}`;
+
 const BOX_VS = `#version 300 es
 in vec3 aPosition;
 in vec3 aNormal;
 uniform mat4 uViewProjection;
 uniform mat4 uModel;
 out vec3 vNormal;
+out vec3 vWorld;
 void main() {
   vNormal = mat3(uModel) * aNormal;
-  gl_Position = uViewProjection * uModel * vec4(aPosition, 1.0);
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vWorld = world.xyz;
+  gl_Position = uViewProjection * world;
 }`;
 
 const BOX_FS = `#version 300 es
 precision highp float;
 in vec3 vNormal;
+in vec3 vWorld;
 uniform vec3 uColour;
 out vec4 outColour;
+${SUN_GLSL}
+${SHADOW_GLSL}
 void main() {
   vec3 n = normalize(vNormal);
-  vec3 lightDir = normalize(vec3(0.35, 0.5, 0.8));
-  float lambert = max(dot(n, lightDir), 0.0);
+  float ndl = dot(n, SUN);
+  float lambert = max(ndl, 0.0) * sunVisibility(vWorld, ndl);
   vec3 lit = uColour * (0.42 + 0.58 * lambert);
   outColour = vec4(lit, 1.0);
 }`;
+
+/** Depth-only pass: the same boxes, seen from the sun. No colour attachment. */
+const SHADOW_VS = `#version 300 es
+in vec3 aPosition;
+uniform mat4 uViewProjection;
+uniform mat4 uModel;
+void main() {
+  gl_Position = uViewProjection * uModel * vec4(aPosition, 1.0);
+}`;
+
+const SHADOW_FS = `#version 300 es
+precision highp float;
+void main() {}`;
 
 const GROUND_VS = `#version 300 es
 in vec2 aPosition;
@@ -66,16 +131,25 @@ void main() {
   gl_Position = uViewProjection * vec4(aPosition, 0.0, 1.0);
 }`;
 
+/**
+ * The ground receives shadows but casts none (it is the plane everything else
+ * sits on), so its shading is the grid tinted by how much sun reaches it. The
+ * shadow is deliberately a fair way short of black: it is the CONTACT that has
+ * to read — where the wheel meets the tarmac — not the darkness.
+ */
 const GROUND_FS = `#version 300 es
 precision highp float;
 in vec2 vWorld;
 out vec4 outColour;
+${SUN_GLSL}
+${SHADOW_GLSL}
 void main() {
   vec2 g = abs(fract(vWorld) - 0.5);
   float line = 1.0 - smoothstep(0.0, 0.03, min(g.x, g.y));
   vec3 base = vec3(0.19, 0.20, 0.22);
   vec3 mark = vec3(0.30, 0.31, 0.34);
-  outColour = vec4(mix(base, mark, line), 1.0);
+  float sun = sunVisibility(vec3(vWorld, 0.0), SUN.z);
+  outColour = vec4(mix(base, mark, line) * (0.55 + 0.45 * sun), 1.0);
 }`;
 
 /**
@@ -153,19 +227,33 @@ void main() {
   outColour = vec4(mix(vec3(0.02, 0.02, 0.03), image, inset), 1.0);
 }`;
 
-interface BoxProgram {
+/**
+ * A pass that draws the scene's boxes. Two of them exist and share every
+ * `drawBox` call site: the shaded pass, and the depth-only shadow pass whose
+ * program has no colour to set. Sharing the call sites is the point — a caster
+ * that drifts out of step with the object it shades is a shadow bug you cannot
+ * see the cause of.
+ */
+interface BoxPass {
   readonly program: WebGLProgram;
   readonly vao: WebGLVertexArrayObject;
   readonly count: number;
   readonly uViewProjection: WebGLUniformLocation;
   readonly uModel: WebGLUniformLocation;
-  readonly uColour: WebGLUniformLocation;
+  readonly uColour: WebGLUniformLocation | null;
 }
 
 interface GroundProgram {
   readonly program: WebGLProgram;
   readonly vao: WebGLVertexArrayObject;
   readonly uViewProjection: WebGLUniformLocation;
+}
+
+/** The sun's depth map: a comparison-sampled depth texture, no colour buffer. */
+interface ShadowTarget {
+  readonly framebuffer: WebGLFramebuffer;
+  readonly texture: WebGLTexture;
+  readonly size: number;
 }
 
 interface GlassProgram {
@@ -230,8 +318,18 @@ interface BoxSize {
 
 export class Renderer {
   private readonly gl: WebGL2RenderingContext;
-  private readonly box: BoxProgram;
+  private readonly box: BoxPass;
+  /** The same geometry, drawn depth-only from the sun. */
+  private readonly caster: BoxPass;
+  private readonly shadow: ShadowTarget;
+  /** Which pass `drawBox` is currently feeding. */
+  private pass: BoxPass;
   private readonly ground: GroundProgram;
+  /** Programs that sample the depth map, and where each takes the sun's camera. */
+  private readonly shadowReceivers: readonly {
+    readonly program: WebGLProgram;
+    readonly uLightViewProjection: WebGLUniformLocation;
+  }[];
   private readonly glass: GlassProgram;
   private readonly mirrors: Readonly<Record<MirrorId, MirrorTarget>>;
   /** The reversing camera's own target and the quad that composites it. */
@@ -250,8 +348,15 @@ export class Renderer {
     this.gl = gl;
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
+    this.shadow = this.createShadowTarget();
     this.box = this.createBoxProgram();
+    this.caster = this.createShadowProgram();
+    this.pass = this.box;
     this.ground = this.createGroundProgram();
+    this.shadowReceivers = [this.box.program, this.ground.program].map((program) => ({
+      program,
+      uLightViewProjection: uniform(gl, program, 'uLightViewProjection'),
+    }));
     this.glass = this.createGlassProgram();
     this.mirrors = {
       interior: this.createMirrorTarget('interior'),
@@ -299,6 +404,12 @@ export class Renderer {
     // Mirror passes first: they render into their own targets, which the main
     // pass then samples when it draws the glass.
     const camera = firstPerson && reverseCameraActive(vehicle, options.reversingCamera === true);
+
+    // The sun's depth map is view independent, so it is built once here and then
+    // sampled by every pass below — windscreen, mirrors and reversing camera all
+    // show the same shadows, which is how the driver can trust the mirror.
+    this.renderShadowMap(vehicle, options.scenario);
+
     if (firstPerson) {
       this.renderMirrors(vehicle, aim, options.overBudget === true, options.scenario);
       if (camera) this.renderReverseCamera(vehicle, options.scenario);
@@ -323,6 +434,63 @@ export class Renderer {
       this.drawGlass(vehicle, aim, viewProjection);
       if (camera) this.drawReverseCameraPanel();
     }
+  }
+
+  /**
+   * Fill the sun's depth map with every caster in the scene, centred on the car.
+   *
+   * The ground is not drawn: it receives shadows and casts none, and putting the
+   * plane the shadows land on into the map is the surest way to get acne. Front
+   * faces are culled instead of back ones so the depth written is the FAR side
+   * of each box — that pushes the recorded surface away from the receiver by the
+   * thickness of the caster, which removes the remaining acne without the
+   * peter-panning a large flat bias would cause.
+   */
+  private renderShadowMap(vehicle: VehicleState, scenario?: Scenario | undefined): void {
+    const gl = this.gl;
+    const lightViewProjection = shadowViewProjection(vehicle.pose);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadow.framebuffer);
+    gl.viewport(0, 0, this.shadow.size, this.shadow.size);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.cullFace(gl.FRONT);
+    this.beginBoxPass(this.caster, lightViewProjection);
+    this.drawCasters(vehicle, scenario);
+    gl.cullFace(gl.BACK);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // Tell the shaded programs where the sun's camera is, and leave the map
+    // bound on its own texture unit — unit 0 belongs to the mirrors.
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.shadow.texture);
+    gl.activeTexture(gl.TEXTURE0);
+    for (const receiver of this.shadowReceivers) {
+      gl.useProgram(receiver.program);
+      gl.uniformMatrix4fv(receiver.uLightViewProjection, false, lightViewProjection);
+    }
+  }
+
+  /**
+   * Everything that blocks the sun: the scenario's solid objects and the car
+   * itself. Markings are paint on the ground, and the cockpit shell is inside
+   * the car where no shadow of it can be seen, so neither is a caster.
+   */
+  private drawCasters(vehicle: VehicleState, scenario?: Scenario | undefined): void {
+    if (scenario) {
+      if (scenario.kerb) this.drawKerb(scenario.kerb);
+      for (const obstacle of scenario.obstacles) this.drawObstacle(obstacle);
+    }
+    this.drawBody(vehicle);
+    for (const id of WHEEL_IDS) this.drawWheel(id, vehicle);
+    this.drawMirrorHousings(vehicle);
+  }
+
+  /** Point `drawBox` at a pass and bind its program, geometry and camera. */
+  private beginBoxPass(pass: BoxPass, viewProjection: Mat4): void {
+    const gl = this.gl;
+    this.pass = pass;
+    gl.useProgram(pass.program);
+    gl.uniformMatrix4fv(pass.uViewProjection, false, viewProjection);
+    gl.bindVertexArray(pass.vao);
   }
 
   /**
@@ -385,32 +553,19 @@ export class Renderer {
     gl.bindVertexArray(this.ground.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    gl.useProgram(this.box.program);
-    gl.uniformMatrix4fv(this.box.uViewProjection, false, viewProjection);
-    gl.bindVertexArray(this.box.vao);
+    this.beginBoxPass(this.box, viewProjection);
 
     if (options.scenario) this.drawScenario(options.scenario);
 
-    // Body: extents straight from the shared vehicle definition.
-    const outline = bodyOutline(VEHICLE);
-    const xs = outline.map((p) => p.x);
-    const centreX = (Math.max(...xs) + Math.min(...xs)) / 2;
-    const halfLength = (Math.max(...xs) - Math.min(...xs)) / 2;
-    const bodyBottom = VEHICLE.sillHeight;
-    const bodyTop = VEHICLE.bodyHeight;
-    this.drawBox(
-      this.bodyMatrix(vehicle),
-      { x: centreX, y: 0, z: (bodyBottom + bodyTop) / 2 },
-      { hx: halfLength, hy: VEHICLE.bodyWidth / 2, hz: (bodyTop - bodyBottom) / 2 },
-      [0.78, 0.24, 0.22],
-    );
+    this.drawBody(vehicle);
 
     // A nose marker so heading is unambiguous in the debug view — it would sit
     // in the driver's eyeline, so it is drawn only from above.
     if (options.noseMarker) {
+      const xs = bodyOutline(VEHICLE).map((p) => p.x);
       this.drawBox(
         this.bodyMatrix(vehicle),
-        { x: Math.max(...xs) - 0.12, y: 0, z: bodyTop + 0.02 },
+        { x: Math.max(...xs) - 0.12, y: 0, z: VEHICLE.bodyHeight + 0.02 },
         { hx: 0.12, hy: 0.28, hz: 0.03 },
         [0.95, 0.9, 0.55],
       );
@@ -664,6 +819,21 @@ export class Renderer {
     }
   }
 
+  /** The body box: extents straight from the shared vehicle definition. */
+  private drawBody(vehicle: VehicleState): void {
+    const xs = bodyOutline(VEHICLE).map((p) => p.x);
+    const centreX = (Math.max(...xs) + Math.min(...xs)) / 2;
+    const halfLength = (Math.max(...xs) - Math.min(...xs)) / 2;
+    const bodyBottom = VEHICLE.sillHeight;
+    const bodyTop = VEHICLE.bodyHeight;
+    this.drawBox(
+      this.bodyMatrix(vehicle),
+      { x: centreX, y: 0, z: (bodyBottom + bodyTop) / 2 },
+      { hx: halfLength, hy: VEHICLE.bodyWidth / 2, hz: (bodyTop - bodyBottom) / 2 },
+      [0.78, 0.24, 0.22],
+    );
+  }
+
   private drawWheel(id: WheelId, vehicle: VehicleState): void {
     const local = wheelPosition(id, VEHICLE);
     const steer = vehicle.wheels[id].steerAngle;
@@ -686,13 +856,16 @@ export class Renderer {
     colour: readonly [number, number, number],
   ): void {
     const gl = this.gl;
+    const pass = this.pass;
     const local = poseMatrix(offset.x, offset.y, offset.z, 0);
     local[0] = size.hx;
     local[5] = size.hy;
     local[10] = size.hz;
-    gl.uniformMatrix4fv(this.box.uModel, false, multiply(parent, local));
-    gl.uniform3f(this.box.uColour, colour[0], colour[1], colour[2]);
-    gl.drawArrays(gl.TRIANGLES, 0, this.box.count);
+    gl.uniformMatrix4fv(pass.uModel, false, multiply(parent, local));
+    // The depth-only shadow pass has no colour to set; every other argument is
+    // the same, which is why casters and shaded boxes can share this call.
+    if (pass.uColour) gl.uniform3f(pass.uColour, colour[0], colour[1], colour[2]);
+    gl.drawArrays(gl.TRIANGLES, 0, pass.count);
   }
 
   /**
@@ -720,7 +893,7 @@ export class Renderer {
     return multiply(projection, view);
   }
 
-  private createBoxProgram(): BoxProgram {
+  private createBoxProgram(): BoxPass {
     const gl = this.gl;
     const program = compileProgram(gl, BOX_VS, BOX_FS);
     const { positions, normals } = unitBoxGeometry();
@@ -729,6 +902,7 @@ export class Renderer {
     bindAttribute(gl, program, 'aPosition', positions, 3);
     bindAttribute(gl, program, 'aNormal', normals, 3);
     gl.bindVertexArray(null);
+    this.bindShadowSampler(program);
     return {
       program,
       vao,
@@ -737,6 +911,74 @@ export class Renderer {
       uModel: uniform(gl, program, 'uModel'),
       uColour: uniform(gl, program, 'uColour'),
     };
+  }
+
+  /**
+   * The caster pass. It gets its own VAO with only positions: attribute
+   * locations are per program, so a VAO wired for one program cannot be reused
+   * by another.
+   */
+  private createShadowProgram(): BoxPass {
+    const gl = this.gl;
+    const program = compileProgram(gl, SHADOW_VS, SHADOW_FS);
+    const { positions } = unitBoxGeometry();
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    bindAttribute(gl, program, 'aPosition', positions, 3);
+    gl.bindVertexArray(null);
+    return {
+      program,
+      vao,
+      count: positions.length / 3,
+      uViewProjection: uniform(gl, program, 'uViewProjection'),
+      uModel: uniform(gl, program, 'uModel'),
+      uColour: null,
+    };
+  }
+
+  /**
+   * The depth map itself. `COMPARE_REF_TO_TEXTURE` with linear filtering makes
+   * every `texture()` call a bilinear depth comparison in hardware, so the 3x3
+   * kernel in the shader costs 9 taps and gets 36 samples' worth of softness.
+   */
+  private createShadowTarget(): ShadowTarget {
+    const gl = this.gl;
+    const size = SHADOW_MAP_SIZE;
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.DEPTH_COMPONENT24,
+      size,
+      size,
+      0,
+      gl.DEPTH_COMPONENT,
+      gl.UNSIGNED_INT,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, texture, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error('Shadow map render target is incomplete.');
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { framebuffer, texture, size };
+  }
+
+  /** Every shadow-receiving program samples the map from texture unit 1. */
+  private bindShadowSampler(program: WebGLProgram): void {
+    const gl = this.gl;
+    gl.useProgram(program);
+    gl.uniform1i(uniform(gl, program, 'uShadowMap'), 1);
   }
 
   private createGroundProgram(): GroundProgram {
@@ -752,6 +994,7 @@ export class Renderer {
     gl.bindVertexArray(vao);
     bindAttribute(gl, program, 'aPosition', quad, 2);
     gl.bindVertexArray(null);
+    this.bindShadowSampler(program);
     return { program, vao, uViewProjection: uniform(gl, program, 'uViewProjection') };
   }
 
